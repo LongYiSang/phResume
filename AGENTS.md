@@ -5,6 +5,7 @@ Use `项目规划/示例目录.md` as the layout blueprint. Keep planning notes 
 
 ## Build, Test, and Development Commands
 Backend: `cd backend && go run ./cmd/api` starts the API, and `go run ./cmd/worker` launches the Asynq worker. `go build ./cmd/...` verifies both binaries compile. Frontend: `cd frontend && npm install` once per clone, then `npm run dev` for local development and `npm run build && npm run start` to simulate production. Full stack: `docker-compose up --build` starts API, worker, PostgreSQL, Redis, MinIO, and frontend together. Keep scripts idempotent for CI.
+When Go module downloads hit timeouts, rerun commands with `GOPROXY=https://goproxy.cn,direct` to leverage the mirror.
 
 ## Coding Style & Naming Conventions
 Format Go code with `gofmt` (tabs, camelCase identifiers) and organize imports with `goimports`. Keep package names short and lower\_snake\_case. For React/Next.js, lean on Prettier defaults (2-space indent, single quotes) and run `npm run lint` before pushing; name components in PascalCase and files in kebab-case when route-related. Update `.env.example` files whenever variables change.
@@ -16,7 +17,7 @@ Write Go tests alongside code as `*_test.go` files and run `go test ./...` befor
 The history is forming, so adopt Conventional Commits (`feat:`, `fix:`, `chore:`, etc.) with short scopes such as `feat(api): add resume uploader`. Rebase before opening PRs to keep linear history. Each PR should link issues, describe functional changes, list test evidence (`go test`, `npm run test`, screenshots for UI tweaks), and note migrations or config updates. Request review from backend and frontend maintainers when changes cross boundaries.
 
 ## Environment & Security Notes
-Never commit real secrets; use `.env.example` and `config.dev.yml` to document required variables and defaults. Keep TLS, JWT keys, and vendor credentials in your secret manager. When touching Docker images, ensure Chromium stays in the worker image and update deploy manifests under `deploy/` accordingly.
+Never commit real secrets. Document required variables in `.env.example`, inject actual values through environment variables (`docker-compose`/CI secrets), and keep TLS, JWT keys, and vendor credentials in your secret manager. When touching Docker images, ensure Chromium stays in the worker image and update deploy manifests under `deploy/` accordingly.
 
 ---
 
@@ -81,13 +82,10 @@ Never commit real secrets; use `.env.example` and `config.dev.yml` to document r
 - ❌ 提交代码（除非用户明确要求）
 - 启动开发服务器
 
-**如要进行构建检查**
-- 前端：使用docker compose build frontend
-- 后端：使用docker compose build backend
 
 如果在这个阶段发现了拿不准的问题，请向我提问。
 不要在回答的开头直接说：你说的对。不允许没有调查就直接给结论，不允许讨好我。
-使用中文回答。
+使用中文回答，注释以中文为主。
 
 
 ---

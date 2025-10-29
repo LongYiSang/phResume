@@ -1,0 +1,36 @@
+# Node.js
+node_modules/
+.next/
+out/
+build/
+dist/
+coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# TypeScript
+*.tsbuildinfo
+
+# Go build artifacts
+backend/tmp/
+backend/bin/
+
+# OS / Editor junk
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Env files
+.env
+.env.*
+
+# Docker
+*.pid
+tmp/
+
+# Build caches
+.turbo/
+.vercel/
