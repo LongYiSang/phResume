@@ -21,6 +21,19 @@ ENV GOPROXY=https://goproxy.cn,direct
 # 从 builder 阶段复制 'air'
 COPY --from=builder /go/bin/air /usr/local/bin/air
 
+# 把 Alpine 的软件源地址修改为国内的镜像服务器
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
+
+# 安装 go-rod 依赖的 Chromium 及字体渲染组件
+RUN apk add --no-cache \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ttf-dejavu \
+    ttf-freefont \
+    wqy-zenhei
+
 # 安装 Go 依赖
 # (这是一个优化：仅当 go.mod/go.sum 变化时才重新下载依赖)
 COPY go.mod go.sum ./
