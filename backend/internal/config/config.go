@@ -11,6 +11,8 @@ import (
 type Config struct {
 	API      APIConfig      `mapstructure:"api"`
 	Database DatabaseConfig `mapstructure:"database"`
+	Redis    RedisConfig    `mapstructure:"redis"`
+	MinIO    MinIOConfig    `mapstructure:"minio"`
 }
 
 // APIConfig contains HTTP server settings.
@@ -26,6 +28,21 @@ type DatabaseConfig struct {
 	User     string `mapstructure:"user"`
 	Password string `mapstructure:"password"`
 	SSLMode  string `mapstructure:"sslmode"`
+}
+
+// RedisConfig 包含 Redis 连接配置。
+type RedisConfig struct {
+	Host string `mapstructure:"host"`
+	Port int    `mapstructure:"port"`
+}
+
+// MinIOConfig contains connection options for MinIO/S3-compatible storage.
+type MinIOConfig struct {
+	Endpoint        string `mapstructure:"endpoint"`
+	AccessKeyID     string `mapstructure:"access_key_id"`
+	SecretAccessKey string `mapstructure:"secret_access_key"`
+	UseSSL          bool   `mapstructure:"use_ssl"`
+	Bucket          string `mapstructure:"bucket"`
 }
 
 // DSN builds a lib/pq compatible connection string.
@@ -80,17 +97,29 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("database.user", "phresume")
 	v.SetDefault("database.password", "phresume")
 	v.SetDefault("database.sslmode", "disable")
+	v.SetDefault("redis.host", "localhost")
+	v.SetDefault("redis.port", 6379)
+	v.SetDefault("minio.endpoint", "localhost:9000")
+	v.SetDefault("minio.use_ssl", false)
+	v.SetDefault("minio.bucket", "resumes")
 }
 
 func bindEnv(v *viper.Viper) error {
 	mappings := map[string]string{
-		"api.port":          "API_PORT",
-		"database.host":     "DATABASE_HOST",
-		"database.port":     "DATABASE_PORT",
-		"database.name":     "POSTGRES_DB",
-		"database.user":     "POSTGRES_USER",
-		"database.password": "POSTGRES_PASSWORD",
-		"database.sslmode":  "DATABASE_SSLMODE",
+		"api.port":                "API_PORT",
+		"database.host":           "DATABASE_HOST",
+		"database.port":           "DATABASE_PORT",
+		"database.name":           "POSTGRES_DB",
+		"database.user":           "POSTGRES_USER",
+		"database.password":       "POSTGRES_PASSWORD",
+		"database.sslmode":        "DATABASE_SSLMODE",
+		"redis.host":              "REDIS_HOST",
+		"redis.port":              "REDIS_PORT",
+		"minio.endpoint":          "MINIO_ENDPOINT",
+		"minio.access_key_id":     "MINIO_ACCESS_KEY_ID",
+		"minio.secret_access_key": "MINIO_SECRET_ACCESS_KEY",
+		"minio.use_ssl":           "MINIO_USE_SSL",
+		"minio.bucket":            "MINIO_BUCKET",
 	}
 
 	for key, env := range mappings {
@@ -123,6 +152,24 @@ func validate(cfg Config) error {
 	}
 	if cfg.Database.SSLMode == "" {
 		return errors.New("database sslmode is required")
+	}
+	if cfg.Redis.Host == "" {
+		return errors.New("redis host is required")
+	}
+	if cfg.Redis.Port <= 0 {
+		return errors.New("redis port must be positive")
+	}
+	if cfg.MinIO.Endpoint == "" {
+		return errors.New("minio endpoint is required")
+	}
+	if cfg.MinIO.AccessKeyID == "" {
+		return errors.New("minio access key id is required")
+	}
+	if cfg.MinIO.SecretAccessKey == "" {
+		return errors.New("minio secret access key is required")
+	}
+	if cfg.MinIO.Bucket == "" {
+		return errors.New("minio bucket is required")
 	}
 	return nil
 }

@@ -1,49 +1,30 @@
 package api
 
 import (
-	"bytes"
-	"errors"
-	"fmt"
-	"html/template"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 
+	"phResume/internal/api/middleware"
 	"phResume/internal/database"
-	"phResume/internal/pdf"
+	"phResume/internal/tasks"
 )
-
-var resumeTemplate = template.Must(template.New("resume").Parse(`
-<!DOCTYPE html>
-<html lang="zh">
-<head>
-  <meta charset="utf-8">
-  <title>{{.Title}}</title>
-  <style>
-    body { font-family: "Noto Sans CJK SC", "Microsoft YaHei", "PingFang SC", sans-serif; margin: 40px; color: #202124; }
-    h1 { font-size: 28px; margin-bottom: 16px; }
-    pre { white-space: pre-wrap; word-wrap: break-word; font-size: 16px; line-height: 1.5; }
-  </style>
-</head>
-<body>
-  <article>
-    <h1>{{.Title}}</h1>
-    <pre>{{.Content}}</pre>
-  </article>
-</body>
-</html>
-`))
 
 // ResumeHandler 负责处理与简历相关的 API 请求。
 type ResumeHandler struct {
-	db *gorm.DB
+	db          *gorm.DB
+	asynqClient *asynq.Client
 }
 
 // NewResumeHandler 构造 ResumeHandler。
-func NewResumeHandler(db *gorm.DB) *ResumeHandler {
-	return &ResumeHandler{db: db}
+func NewResumeHandler(db *gorm.DB, asynqClient *asynq.Client) *ResumeHandler {
+	return &ResumeHandler{
+		db:          db,
+		asynqClient: asynqClient,
+	}
 }
 
 type createResumeRequest struct {
@@ -73,7 +54,7 @@ func (h *ResumeHandler) CreateResume(c *gin.Context) {
 	c.JSON(http.StatusCreated, resume)
 }
 
-// DownloadResume 生成 PDF 并返回给客户端。
+// DownloadResume 将 PDF 生成任务入队并立即返回 202。
 func (h *ResumeHandler) DownloadResume(c *gin.Context) {
 	idParam := c.Param("id")
 	resumeID, err := strconv.ParseUint(idParam, 10, 64)
@@ -82,30 +63,21 @@ func (h *ResumeHandler) DownloadResume(c *gin.Context) {
 		return
 	}
 
-	var resume database.Resume
-	if err := h.db.WithContext(c.Request.Context()).First(&resume, resumeID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "resume not found"})
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query resume"})
-		}
-		return
-	}
-
-	var buf bytes.Buffer
-	if err := resumeTemplate.Execute(&buf, resume); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to render resume"})
-		return
-	}
-
-	pdfBytes, err := pdf.GeneratePDFFromHTML(buf.String())
+	correlationID := middleware.GetCorrelationID(c)
+	task, err := tasks.NewPDFGenerateTask(uint(resumeID), correlationID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate pdf"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create task"})
 		return
 	}
 
-	filename := fmt.Sprintf("resume-%d.pdf", resume.ID)
-	c.Header("Content-Type", "application/pdf")
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
-	c.Data(http.StatusOK, "application/pdf", pdfBytes)
+	info, err := h.asynqClient.Enqueue(task, asynq.MaxRetry(5))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to enqueue pdf generation"})
+		return
+	}
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"message": "PDF generation request accepted",
+		"task_id": info.ID,
+	})
 }

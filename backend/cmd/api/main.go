@@ -4,10 +4,16 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
+	"net/http"
+	"os"
 
+	"github.com/gin-gonic/gin"
+	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 
 	"phResume/internal/api"
+	"phResume/internal/api/middleware"
 	"phResume/internal/config"
 	"phResume/internal/database"
 )
@@ -20,6 +26,9 @@ func main() {
 		cfg.Database.Name,
 		cfg.Database.SSLMode,
 	)
+
+	slogLogger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	slog.SetDefault(slogLogger)
 
 	db, err := database.InitDatabase(cfg.Database)
 	if err != nil {
@@ -49,8 +58,23 @@ func main() {
 	address := fmt.Sprintf(":%d", cfg.API.Port)
 	log.Printf("api listening on %s", address)
 
-	router := api.NewRouter(cfg)
-	api.RegisterRoutes(router, db)
+	redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
+	asynqClient := asynq.NewClient(asynq.RedisClientOpt{Addr: redisAddr})
+	defer func() {
+		if err := asynqClient.Close(); err != nil {
+			log.Printf("close asynq client: %v", err)
+		}
+	}()
+
+	router := gin.New()
+	router.Use(gin.Recovery())
+	router.Use(middleware.CorrelationIDMiddleware())
+	router.Use(middleware.SlogLoggerMiddleware(slogLogger))
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	api.RegisterRoutes(router, db, asynqClient)
 
 	if err := router.Run(address); err != nil {
 		log.Fatalf("failed to start api server: %v", err)

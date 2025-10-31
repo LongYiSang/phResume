@@ -17,4 +17,6 @@ type Resume struct {
 	Content string `gorm:"type:text"`
 	UserID  uint   `gorm:"index"`
 	User    User   `gorm:"constraint:OnDelete:CASCADE"`
+	PdfUrl  string `gorm:"size:512"`
+	Status  string `gorm:"size:32"`
 }
