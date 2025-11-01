@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
 	"phResume/internal/database"
@@ -43,17 +44,19 @@ const resumeHTMLTemplate = `<!DOCTYPE html>
 
 // PDFTaskHandler 负责消费 PDF 生成任务。
 type PDFTaskHandler struct {
-	db      *gorm.DB
-	storage *storage.Client
-	logger  *slog.Logger
+	db          *gorm.DB
+	storage     *storage.Client
+	redisClient *redis.Client
+	logger      *slog.Logger
 }
 
 // NewPDFTaskHandler 创建任务处理器。
-func NewPDFTaskHandler(db *gorm.DB, storage *storage.Client, logger *slog.Logger) *PDFTaskHandler {
+func NewPDFTaskHandler(db *gorm.DB, storage *storage.Client, redisClient *redis.Client, logger *slog.Logger) *PDFTaskHandler {
 	return &PDFTaskHandler{
-		db:      db,
-		storage: storage,
-		logger:  logger,
+		db:          db,
+		storage:     storage,
+		redisClient: redisClient,
+		logger:      logger,
 	}
 }
 
@@ -97,14 +100,14 @@ func (h *PDFTaskHandler) ProcessTask(ctx context.Context, t *asynq.Task) error {
 
 	objectName := fmt.Sprintf("resumes/%d/%s.pdf", resume.ID, uuid.NewString())
 	pdfReader := bytes.NewReader(pdfBytes)
-	url, err := h.storage.UploadFile(ctx, objectName, pdfReader, int64(len(pdfBytes)), "application/pdf")
+	_, err = h.storage.UploadFile(ctx, objectName, pdfReader, int64(len(pdfBytes)), "application/pdf")
 	if err != nil {
 		log.Error("upload pdf to minio failed", slog.Any("error", err))
 		return err
 	}
 
 	update := map[string]any{
-		"pdf_url": url,
+		"pdf_url": objectName,
 		"status":  "completed",
 	}
 	if err := h.db.WithContext(ctx).Model(&resume).Updates(update).Error; err != nil {
@@ -112,6 +115,23 @@ func (h *PDFTaskHandler) ProcessTask(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
+	message := map[string]any{
+		"status":    "completed",
+		"resume_id": resume.ID,
+	}
+	data, err := json.Marshal(message)
+	if err != nil {
+		log.Error("marshal notification payload failed", slog.Any("error", err))
+		return err
+	}
+
+	channel := fmt.Sprintf("user_notify:%d", resume.UserID)
+	if err := h.redisClient.Publish(ctx, channel, data).Err(); err != nil {
+		log.Error("publish redis notification failed", slog.Any("error", err))
+		return err
+	}
+
+	log.Info("Published notification to channel", slog.String("channel", channel))
 	log.Info("PDF generation task completed successfully.")
 	return nil
 }

@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"log/slog"
 	"os"
 
 	"github.com/hibiken/asynq"
+	"github.com/redis/go-redis/v9"
 
 	"phResume/internal/config"
 	"phResume/internal/database"
@@ -34,12 +36,23 @@ func main() {
 	log.Printf("storage client ready, bucket=%s", cfg.MinIO.Bucket)
 
 	redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
+	redisClient := redis.NewClient(&redis.Options{Addr: redisAddr})
+	defer func() {
+		if err := redisClient.Close(); err != nil {
+			logger.Error("close redis client failed", slog.Any("error", err))
+		}
+	}()
+
+	if err := redisClient.Ping(context.Background()).Err(); err != nil {
+		log.Fatalf("ping redis: %v", err)
+	}
+
 	redisOpt := asynq.RedisClientOpt{Addr: redisAddr}
 	server := asynq.NewServer(redisOpt, asynq.Config{
 		Concurrency: 10,
 	})
 
-	pdfHandler := worker.NewPDFTaskHandler(db, storageClient, logger)
+	pdfHandler := worker.NewPDFTaskHandler(db, storageClient, redisClient, logger)
 
 	mux := asynq.NewServeMux()
 	mux.Handle(tasks.TypePDFGenerate, pdfHandler)

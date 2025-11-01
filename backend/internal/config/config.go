@@ -1,8 +1,10 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -13,6 +15,7 @@ type Config struct {
 	Database DatabaseConfig `mapstructure:"database"`
 	Redis    RedisConfig    `mapstructure:"redis"`
 	MinIO    MinIOConfig    `mapstructure:"minio"`
+	JWT      JWTConfig      `mapstructure:"jwt"`
 }
 
 // APIConfig contains HTTP server settings.
@@ -43,6 +46,20 @@ type MinIOConfig struct {
 	SecretAccessKey string `mapstructure:"secret_access_key"`
 	UseSSL          bool   `mapstructure:"use_ssl"`
 	Bucket          string `mapstructure:"bucket"`
+	PublicEndpoint  string `mapstructure:"public_endpoint"`
+}
+
+// JWTConfig 包含 JWT 密钥与时效配置。
+type JWTConfig struct {
+	PrivateKeyBase64   string `mapstructure:"private_key"`
+	PublicKeyBase64    string `mapstructure:"public_key"`
+	AccessTokenTTLRaw  string `mapstructure:"access_token_ttl"`
+	RefreshTokenTTLRaw string `mapstructure:"refresh_token_ttl"`
+
+	PrivateKeyPEM   []byte        `mapstructure:"-"`
+	PublicKeyPEM    []byte        `mapstructure:"-"`
+	AccessTokenTTL  time.Duration `mapstructure:"-"`
+	RefreshTokenTTL time.Duration `mapstructure:"-"`
 }
 
 // DSN builds a lib/pq compatible connection string.
@@ -71,6 +88,10 @@ func Load() (*Config, error) {
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
+	}
+
+	if err := cfg.JWT.prepare(); err != nil {
+		return nil, fmt.Errorf("prepare jwt config: %w", err)
 	}
 
 	if err := validate(cfg); err != nil {
@@ -102,6 +123,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("minio.endpoint", "localhost:9000")
 	v.SetDefault("minio.use_ssl", false)
 	v.SetDefault("minio.bucket", "resumes")
+	v.SetDefault("minio.public_endpoint", "http://localhost:9000")
+	v.SetDefault("jwt.access_token_ttl", "15m")
+	v.SetDefault("jwt.refresh_token_ttl", "168h")
 }
 
 func bindEnv(v *viper.Viper) error {
@@ -120,6 +144,11 @@ func bindEnv(v *viper.Viper) error {
 		"minio.secret_access_key": "MINIO_SECRET_ACCESS_KEY",
 		"minio.use_ssl":           "MINIO_USE_SSL",
 		"minio.bucket":            "MINIO_BUCKET",
+		"minio.public_endpoint":   "MINIO_PUBLIC_ENDPOINT",
+		"jwt.private_key":         "JWT_PRIVATE_KEY",
+		"jwt.public_key":          "JWT_PUBLIC_KEY",
+		"jwt.access_token_ttl":    "JWT_ACCESS_TOKEN_TTL",
+		"jwt.refresh_token_ttl":   "JWT_REFRESH_TOKEN_TTL",
 	}
 
 	for key, env := range mappings {
@@ -171,5 +200,60 @@ func validate(cfg Config) error {
 	if cfg.MinIO.Bucket == "" {
 		return errors.New("minio bucket is required")
 	}
+	if cfg.MinIO.PublicEndpoint == "" {
+		return errors.New("minio public endpoint is required")
+	}
+	if len(cfg.JWT.PrivateKeyPEM) == 0 {
+		return errors.New("jwt private key is required")
+	}
+	if len(cfg.JWT.PublicKeyPEM) == 0 {
+		return errors.New("jwt public key is required")
+	}
+	if cfg.JWT.AccessTokenTTL <= 0 {
+		return errors.New("jwt access token ttl must be positive")
+	}
+	if cfg.JWT.RefreshTokenTTL <= 0 {
+		return errors.New("jwt refresh token ttl must be positive")
+	}
+	return nil
+}
+
+func (j *JWTConfig) prepare() error {
+	if j.PrivateKeyBase64 == "" {
+		return errors.New("jwt private key base64 is required")
+	}
+	priv, err := base64.StdEncoding.DecodeString(j.PrivateKeyBase64)
+	if err != nil {
+		return fmt.Errorf("decode jwt private key: %w", err)
+	}
+	j.PrivateKeyPEM = priv
+
+	if j.PublicKeyBase64 == "" {
+		return errors.New("jwt public key base64 is required")
+	}
+	pub, err := base64.StdEncoding.DecodeString(j.PublicKeyBase64)
+	if err != nil {
+		return fmt.Errorf("decode jwt public key: %w", err)
+	}
+	j.PublicKeyPEM = pub
+
+	if j.AccessTokenTTLRaw == "" {
+		return errors.New("jwt access token ttl is required")
+	}
+	accessTTL, err := time.ParseDuration(j.AccessTokenTTLRaw)
+	if err != nil {
+		return fmt.Errorf("parse jwt access token ttl: %w", err)
+	}
+	j.AccessTokenTTL = accessTTL
+
+	if j.RefreshTokenTTLRaw == "" {
+		return errors.New("jwt refresh token ttl is required")
+	}
+	refreshTTL, err := time.ParseDuration(j.RefreshTokenTTLRaw)
+	if err != nil {
+		return fmt.Errorf("parse jwt refresh token ttl: %w", err)
+	}
+	j.RefreshTokenTTL = refreshTTL
+
 	return nil
 }

@@ -8,12 +8,20 @@ x-db-env: &db-env
   POSTGRES_PASSWORD: phresume
   POSTGRES_DB: phresume
 
+x-jwt-env: &jwt-env
+  JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
+  JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+  JWT_ACCESS_TOKEN_TTL: ${JWT_ACCESS_TOKEN_TTL}
+  JWT_REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL}
+
 services:
   db:
     <<: *service-defaults
     image: postgres:15-alpine
     environment:
       <<: *db-env
+    ports:
+      - "5432:5432" 
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -66,7 +74,7 @@ services:
       redis:
         condition: service_healthy
     environment:
-      <<: *db-env
+      <<: [*db-env, *jwt-env]
       DATABASE_HOST: db
       DATABASE_PORT: '5432'
       DATABASE_SSLMODE: disable
@@ -74,10 +82,16 @@ services:
       REDIS_PORT: 6379
       API_PORT: '8080'
       MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: http://localhost:9000
       MINIO_ACCESS_KEY_ID: minioadmin
       MINIO_SECRET_ACCESS_KEY: minioadmin
       MINIO_BUCKET: resumes
       MINIO_USE_SSL: 'false'
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+      JWT_ACCESS_TOKEN_TTL: ${JWT_ACCESS_TOKEN_TTL}
+      JWT_REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL}
+
     volumes:
       - ./backend:/app
     command: air -c .air.toml
@@ -118,13 +132,14 @@ services:
       redis:
         condition: service_healthy
     environment:
-      <<: *db-env
+      <<: [*db-env, *jwt-env]
       DATABASE_HOST: db
       DATABASE_PORT: '5432'
       DATABASE_SSLMODE: disable
       REDIS_HOST: redis
       REDIS_PORT: 6379
       MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: http://localhost:9000
       MINIO_ACCESS_KEY_ID: minioadmin
       MINIO_SECRET_ACCESS_KEY: minioadmin
       MINIO_BUCKET: resumes

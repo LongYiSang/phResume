@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -10,12 +11,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
 	"phResume/internal/api"
 	"phResume/internal/api/middleware"
+	"phResume/internal/auth"
 	"phResume/internal/config"
 	"phResume/internal/database"
+	"phResume/internal/storage"
 )
 
 func main() {
@@ -30,6 +34,16 @@ func main() {
 	slogLogger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(slogLogger)
 
+	authService, err := auth.NewAuthService(
+		cfg.JWT.PrivateKeyPEM,
+		cfg.JWT.PublicKeyPEM,
+		cfg.JWT.AccessTokenTTL,
+		cfg.JWT.RefreshTokenTTL,
+	)
+	if err != nil {
+		log.Fatalf("init auth service: %v", err)
+	}
+
 	db, err := database.InitDatabase(cfg.Database)
 	if err != nil {
 		log.Fatalf("init database: %v", err)
@@ -41,12 +55,21 @@ func main() {
 	}
 	log.Printf("database migrated")
 
+	storageClient, err := storage.NewClient(cfg.MinIO)
+	if err != nil {
+		log.Fatalf("init storage client: %v", err)
+	}
+
 	var seedUser database.User
 	switch err := db.First(&seedUser, 1).Error; {
 	case err == nil:
 		// seeded user already present
 	case errors.Is(err, gorm.ErrRecordNotFound):
-		seeded := database.User{Model: gorm.Model{ID: 1}, Username: "test_user", PasswordHash: "seeded-password"}
+		hashed, hashErr := authService.HashPassword("seeded-password")
+		if hashErr != nil {
+			log.Fatalf("hash seed user password: %v", hashErr)
+		}
+		seeded := database.User{Model: gorm.Model{ID: 1}, Username: "test_user", PasswordHash: hashed}
 		if err := db.Create(&seeded).Error; err != nil {
 			log.Fatalf("seed default user: %v", err)
 		}
@@ -59,6 +82,16 @@ func main() {
 	log.Printf("api listening on %s", address)
 
 	redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
+	redisClient := redis.NewClient(&redis.Options{Addr: redisAddr})
+	defer func() {
+		if err := redisClient.Close(); err != nil {
+			log.Printf("close redis client: %v", err)
+		}
+	}()
+	if err := redisClient.Ping(context.Background()).Err(); err != nil {
+		log.Fatalf("ping redis: %v", err)
+	}
+
 	asynqClient := asynq.NewClient(asynq.RedisClientOpt{Addr: redisAddr})
 	defer func() {
 		if err := asynqClient.Close(); err != nil {
@@ -74,7 +107,7 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	api.RegisterRoutes(router, db, asynqClient)
+	api.RegisterRoutes(router, db, asynqClient, authService, redisClient, slogLogger, storageClient)
 
 	if err := router.Run(address); err != nil {
 		log.Fatalf("failed to start api server: %v", err)

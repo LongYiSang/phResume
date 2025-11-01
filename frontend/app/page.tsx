@@ -1,13 +1,109 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+
+type TaskStatus = "idle" | "pending" | "completed";
 
 export default function Home() {
+  const router = useRouter();
+  const { accessToken, isAuthenticated } = useAuth();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [savedResumeId, setSavedResumeId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [taskStatus, setTaskStatus] = useState<TaskStatus>("idle");
+  const socketRef = useRef<WebSocket | null>(null);
+
+  const fetchDownloadLink = useCallback(
+    async (resumeId: number) => {
+      if (!accessToken) {
+        setError("请先登录");
+        setTaskStatus("idle");
+        return;
+      }
+
+      setError(null);
+
+      try {
+        const response = await fetch(
+          `/api/v1/resume/${resumeId}/download-link`,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error("failed to fetch download link");
+        }
+
+        const data = await response.json();
+        if (data?.url) {
+          window.open(data.url, "_blank", "noopener");
+        } else {
+          throw new Error("missing url in response");
+        }
+      } catch (err) {
+        console.error("获取预签名链接失败", err);
+        setError("获取下载链接失败，请稍后重试");
+      } finally {
+        setTaskStatus("idle");
+      }
+    },
+    [accessToken],
+  );
+
+  useEffect(() => {
+    if (isAuthenticated === false) {
+      router.push("/login");
+    }
+  }, [isAuthenticated, router]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !accessToken) {
+      return;
+    }
+
+    const ws = new WebSocket("ws://localhost/api/v1/ws");
+    socketRef.current = ws;
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: "auth", token: accessToken }));
+      console.log("WebSocket connected and authenticated.");
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        if (data.status === "completed" && typeof data.resume_id === "number") {
+          setTaskStatus("completed");
+          fetchDownloadLink(data.resume_id);
+        }
+      } catch (parseError) {
+        console.error("Invalid WebSocket payload:", parseError);
+      }
+    };
+
+    ws.onclose = () => {
+      console.log("WebSocket disconnected.");
+      socketRef.current = null;
+    };
+
+    ws.onerror = () => {
+      console.error("WebSocket error.");
+      socketRef.current = null;
+    };
+
+    return () => {
+      ws.close();
+      socketRef.current = null;
+    };
+  }, [isAuthenticated, accessToken, fetchDownloadLink]);
 
   const handleSave = async () => {
     setError(null);
@@ -22,13 +118,18 @@ export default function Home() {
 
     setIsLoading(true);
 
-    const apiUrl = `${process.env.NEXT_PUBLIC_API_BASE_URL}/v1/resume`;
+    if (!accessToken) {
+      setError("请先登录");
+      setIsLoading(false);
+      return;
+    }
 
     try {
-      const response = await fetch(apiUrl, {
+      const response = await fetch("/api/v1/resume", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({ title: trimmedTitle, content: trimmedContent }),
       });
@@ -46,12 +147,43 @@ export default function Home() {
     }
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!savedResumeId) {
       return;
     }
 
-    window.open(`/api/v1/resume/${savedResumeId}/download`);
+    if (!accessToken) {
+      setError("请先登录");
+      return;
+    }
+
+    setError(null);
+    setTaskStatus("pending");
+
+    try {
+      const response = await fetch(`/api/v1/resume/${savedResumeId}/download`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("下载失败");
+      }
+    } catch (err) {
+      setError("生成任务提交失败，请稍后重试");
+      setTaskStatus("idle");
+    }
+  };
+
+  const renderDownloadLabel = () => {
+    if (taskStatus === "pending") {
+      return "生成中...";
+    }
+    if (taskStatus === "completed") {
+      return "已生成，重新生成";
+    }
+    return "生成 PDF";
   };
 
   return (
@@ -61,7 +193,7 @@ export default function Home() {
           简历编辑器
         </h1>
         <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-          输入简历内容，保存并下载 PDF。
+          输入简历内容，保存并生成 PDF。
         </p>
       </header>
 
@@ -91,16 +223,22 @@ export default function Home() {
         <button
           type="button"
           onClick={handleDownload}
-          disabled={savedResumeId === null}
+          disabled={savedResumeId === null || taskStatus === "pending"}
           className="rounded-md border border-zinc-300 px-6 py-2 text-sm font-medium text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400 dark:border-zinc-600 dark:text-zinc-100 dark:hover:bg-zinc-800"
         >
-          下载 PDF
+          {renderDownloadLabel()}
         </button>
       </div>
 
       {savedResumeId !== null && (
         <div className="text-sm text-zinc-500 dark:text-zinc-400">
           已保存的简历 ID：{savedResumeId}
+        </div>
+      )}
+
+      {taskStatus === "pending" && (
+        <div className="text-sm text-zinc-500 dark:text-zinc-400">
+          正在生成 PDF，请稍候...
         </div>
       )}
 

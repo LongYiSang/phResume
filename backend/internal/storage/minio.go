@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"path"
-	"strings"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -17,70 +15,76 @@ import (
 
 // Client 封装 MinIO 客户端，提供简化的上传接口。
 type Client struct {
-	minio    *minio.Client
-	bucket   string
-	endpoint string
-	useSSL   bool
+	internalClient *minio.Client
+	publicClient   *minio.Client
+	bucketName     string
 }
 
 // NewClient 根据配置初始化 MinIO 客户端，并确保目标 Bucket 存在。
 func NewClient(cfg config.MinIOConfig) (*Client, error) {
-	client, err := minio.New(cfg.Endpoint, &minio.Options{
+	internalClient, err := minio.New(cfg.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
 		Secure: cfg.UseSSL,
+		Region: "us-east-1",
 	})
 	if err != nil {
-		return nil, fmt.Errorf("init minio client: %w", err)
+		return nil, fmt.Errorf("init internal minio client: %w", err)
+	}
+
+	parsedPublicEndpoint, err := url.Parse(cfg.PublicEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("parse minio public endpoint: %w", err)
+	}
+
+	publicHost := parsedPublicEndpoint.Host
+	if publicHost == "" {
+		return nil, fmt.Errorf("invalid minio public endpoint, host missing")
+	}
+
+	publicClient, err := minio.New(publicHost, &minio.Options{
+		Creds:  credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
+		Secure: parsedPublicEndpoint.Scheme == "https",
+		Region: "us-east-1",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("init public minio client: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	exists, err := client.BucketExists(ctx, cfg.Bucket)
+	exists, err := internalClient.BucketExists(ctx, cfg.Bucket)
 	if err != nil {
 		return nil, fmt.Errorf("check bucket %q: %w", cfg.Bucket, err)
 	}
 	if !exists {
-		if err := client.MakeBucket(ctx, cfg.Bucket, minio.MakeBucketOptions{}); err != nil {
+		if err := internalClient.MakeBucket(ctx, cfg.Bucket, minio.MakeBucketOptions{}); err != nil {
 			return nil, fmt.Errorf("make bucket %q: %w", cfg.Bucket, err)
 		}
 	}
 
 	return &Client{
-		minio:    client,
-		bucket:   cfg.Bucket,
-		endpoint: cfg.Endpoint,
-		useSSL:   cfg.UseSSL,
+		internalClient: internalClient,
+		publicClient:   publicClient,
+		bucketName:     cfg.Bucket,
 	}, nil
 }
 
-// UploadFile 上传对象并返回其可访问的 URL。
-func (c *Client) UploadFile(ctx context.Context, objectName string, reader io.Reader, size int64, contentType string) (string, error) {
+// UploadFile 将对象上传到私有 Bucket，并返回上传结果。
+func (c *Client) UploadFile(ctx context.Context, objectName string, reader io.Reader, size int64, contentType string) (*minio.UploadInfo, error) {
 	opts := minio.PutObjectOptions{ContentType: contentType}
-	if _, err := c.minio.PutObject(ctx, c.bucket, objectName, reader, size, opts); err != nil {
-		return "", fmt.Errorf("put object %q: %w", objectName, err)
+	info, err := c.internalClient.PutObject(ctx, c.bucketName, objectName, reader, size, opts)
+	if err != nil {
+		return nil, fmt.Errorf("put object %q: %w", objectName, err)
 	}
-	return c.objectURL(objectName), nil
+	return &info, nil
 }
 
-func (c *Client) objectURL(objectName string) string {
-	scheme := "http"
-	if c.useSSL {
-		scheme = "https"
-	}
-
-	endpoint := c.endpoint
-	if !strings.Contains(endpoint, "://") {
-		endpoint = fmt.Sprintf("%s://%s", scheme, endpoint)
-	}
-
-	u, err := url.Parse(endpoint)
+// GeneratePresignedURL 生成对象的限时下载链接。
+func (c *Client) GeneratePresignedURL(ctx context.Context, objectKey string, duration time.Duration) (string, error) {
+	presignedURL, err := c.publicClient.PresignedGetObject(ctx, c.bucketName, objectKey, duration, nil)
 	if err != nil {
-		host := strings.TrimPrefix(c.endpoint, "http://")
-		host = strings.TrimPrefix(host, "https://")
-		return fmt.Sprintf("%s://%s/%s/%s", scheme, host, c.bucket, objectName)
+		return "", fmt.Errorf("generate presigned url for %q: %w", objectKey, err)
 	}
-
-	u.Path = path.Join(strings.TrimSuffix(u.Path, "/"), c.bucket, objectName)
-	return u.String()
+	return presignedURL.String(), nil
 }
