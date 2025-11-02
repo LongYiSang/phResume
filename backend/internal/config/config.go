@@ -16,6 +16,7 @@ type Config struct {
 	Redis    RedisConfig    `mapstructure:"redis"`
 	MinIO    MinIOConfig    `mapstructure:"minio"`
 	JWT      JWTConfig      `mapstructure:"jwt"`
+	ClamAV   ClamAVConfig   `mapstructure:"clamav"`
 }
 
 // APIConfig contains HTTP server settings.
@@ -47,6 +48,12 @@ type MinIOConfig struct {
 	UseSSL          bool   `mapstructure:"use_ssl"`
 	Bucket          string `mapstructure:"bucket"`
 	PublicEndpoint  string `mapstructure:"public_endpoint"`
+}
+
+// ClamAVConfig contains connection options for ClamAV scanning service.
+type ClamAVConfig struct {
+	Host string `mapstructure:"host"`
+	Port string `mapstructure:"port"`
 }
 
 // JWTConfig 包含 JWT 密钥与时效配置。
@@ -126,6 +133,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("minio.public_endpoint", "http://localhost:9000")
 	v.SetDefault("jwt.access_token_ttl", "15m")
 	v.SetDefault("jwt.refresh_token_ttl", "168h")
+	v.SetDefault("clamav.host", "clamav")
+	v.SetDefault("clamav.port", "3310")
 }
 
 func bindEnv(v *viper.Viper) error {
@@ -149,6 +158,8 @@ func bindEnv(v *viper.Viper) error {
 		"jwt.public_key":          "JWT_PUBLIC_KEY",
 		"jwt.access_token_ttl":    "JWT_ACCESS_TOKEN_TTL",
 		"jwt.refresh_token_ttl":   "JWT_REFRESH_TOKEN_TTL",
+		"clamav.host":             "CLAMAV_HOST",
+		"clamav.port":             "CLAMAV_PORT",
 	}
 
 	for key, env := range mappings {
@@ -202,6 +213,12 @@ func validate(cfg Config) error {
 	}
 	if cfg.MinIO.PublicEndpoint == "" {
 		return errors.New("minio public endpoint is required")
+	}
+	if cfg.ClamAV.Host == "" {
+		return errors.New("clamav host is required")
+	}
+	if cfg.ClamAV.Port == "" {
+		return errors.New("clamav port is required")
 	}
 	if len(cfg.JWT.PrivateKeyPEM) == 0 {
 		return errors.New("jwt private key is required")

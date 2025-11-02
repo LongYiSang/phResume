@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"net/http"
 	"os"
 
 	"github.com/hibiken/asynq"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 
 	"phResume/internal/config"
 	"phResume/internal/database"
+	"phResume/internal/metrics"
 	"phResume/internal/storage"
 	"phResume/internal/tasks"
 	"phResume/internal/worker"
@@ -52,9 +55,20 @@ func main() {
 		Concurrency: 10,
 	})
 
+	go func() {
+		metricsMux := http.NewServeMux()
+		metricsMux.Handle("/metrics", promhttp.Handler())
+
+		logger.Info("worker metrics server started", slog.String("addr", ":9100"))
+		if err := http.ListenAndServe(":9100", metricsMux); err != nil {
+			log.Fatalf("could not start worker metrics server: %v", err)
+		}
+	}()
+
 	pdfHandler := worker.NewPDFTaskHandler(db, storageClient, redisClient, logger)
 
 	mux := asynq.NewServeMux()
+	mux.Use(metrics.AsynqMetricsMiddleware())
 	mux.Handle(tasks.TypePDFGenerate, pdfHandler)
 
 	logger.Info("worker service started", slog.String("redis_addr", redisAddr))

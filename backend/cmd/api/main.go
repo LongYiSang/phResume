@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
@@ -19,6 +20,7 @@ import (
 	"phResume/internal/auth"
 	"phResume/internal/config"
 	"phResume/internal/database"
+	"phResume/internal/metrics"
 	"phResume/internal/storage"
 )
 
@@ -101,11 +103,13 @@ func main() {
 
 	router := gin.New()
 	router.Use(gin.Recovery())
+	router.Use(metrics.GinMiddleware())
 	router.Use(middleware.CorrelationIDMiddleware())
 	router.Use(middleware.SlogLoggerMiddleware(slogLogger))
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
+	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	api.RegisterRoutes(router, db, asynqClient, authService, redisClient, slogLogger, storageClient)
 
