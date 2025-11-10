@@ -239,7 +239,9 @@
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -339,13 +341,13 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(phresume_asynq_tasks_processed_total{service=\"$service\"}[5m])) by (task_type)",
+          "expr": "sum(rate(phresume_asynq_tasks_processed_total{service=\"worker\"}[5m])) by (task_type)",
           "legendFormat": "{{task_type}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Asynq Task Rate ($service)",
+      "title": "Asynq Task Rate (worker)",
       "type": "timeseries"
     },
     {
@@ -425,13 +427,13 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(phresume_asynq_tasks_failed_total{service=\"$service\"}[5m])) by (task_type)",
+          "expr": "sum(rate(phresume_asynq_tasks_failed_total{service=\"worker\"}[5m])) by (task_type)",
           "legendFormat": "{{task_type}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Asynq Task Failure Rate ($service)",
+      "title": "Asynq Task Failure Rate (worker)",
       "type": "timeseries"
     },
     {
@@ -478,7 +480,9 @@
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -492,13 +496,13 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(phresume_asynq_tasks_in_progress{service=\"$service\"})",
+          "expr": "sum(phresume_asynq_tasks_in_progress{service=\"worker\"})",
           "legendFormat": "",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Asynq In-Progress Tasks ($service)",
+      "title": "Asynq In-Progress Tasks (worker)",
       "type": "stat"
     },
     {
@@ -513,9 +517,9 @@
       "options": {
         "dedupStrategy": "none",
         "enableLogDetails": true,
-        "prettifyLogMessage": false,
+        "prettifyLogMessage": true,
         "showCommonLabels": true,
-        "showLabels": false,
+        "showLabels": true,
         "showTime": true,
         "sortOrder": "Descending",
         "wrapLogMessage": false
@@ -523,7 +527,7 @@
       "targets": [
         {
           "datasource": "Loki",
-          "expr": "{service=\"$service\"} | json | line_format \"{{.msg}}\" | correlation_id=~\"$correlation_id\"",
+          "expr": "{service=~\"$service\"} | correlation_id=~\"$correlation_id\"",
           "refId": "A"
         }
       ],
@@ -545,13 +549,11 @@
           "text": "api",
           "value": "api"
         },
-        "datasource": {
-          "type": "prometheus",
-          "uid": "prometheus"
-        },
+        "datasource": "Loki",
         "definition": "label_values(service)",
         "hide": 0,
-        "includeAll": false,
+        "includeAll": true,
+        "allValue": ".+",
         "label": "Service",
         "multi": false,
         "name": "service",
@@ -566,16 +568,17 @@
       {
         "current": {
           "selected": false,
-          "text": "",
-          "value": ""
+          "text": ".*",
+          "value": ".*"
         },
         "hide": 0,
-        "label": "Correlation ID",
+        "label": "Correlation ID (regex)",
         "name": "correlation_id",
         "options": [],
         "query": "",
         "skipUrlSync": false,
-        "type": "textbox"
+        "type": "textbox",
+        "description": "使用正则过滤 correlation_id，默认 .* 匹配全部"
       }
     ]
   },

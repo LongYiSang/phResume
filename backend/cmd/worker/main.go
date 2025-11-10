@@ -23,7 +23,7 @@ import (
 func main() {
 	cfg := config.MustLoad()
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
 	db, err := database.InitDatabase(cfg.Database)

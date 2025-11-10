@@ -18,19 +18,36 @@ scrape_configs:
             values: [phresume_app-network]
 
     relabel_configs:
-      - source_labels: [__meta_docker_compose_service]
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
         target_label: service
       - source_labels: [__meta_docker_container_name]
         regex: /?(.*)
         target_label: container
 
     pipeline_stages:
-      - json:
-          expressions:
-            log_msg: msg
-            correlation_id: correlation_id
-      - labels:
-          correlation_id:
-      # 若想用 log_msg 替换原始日志，可启用以下配置
-      # - output:
-      #     source: log_msg
+      # 分支 1：API / Worker JSON 日志
+      - match:
+          selector: '{service=~"api|worker"}'
+          stages:
+            - json:
+                expressions:
+                  log_msg: msg
+                  level: level
+                  correlation_id: correlation_id
+            - labels:
+                level:
+                correlation_id:
+            - output:
+                source: log_msg
+
+      # 分支 2：Nginx Combined 日志
+      - match:
+          selector: '{service="nginx"}'
+          stages:
+            - regex:
+                expression: '^(?P<ip>[\w.:_-]+) - (?P<user>.*?) \[(?P<time>.*?)\] "(?P<method>\S+) (?P<path>\S+) (?P<proto>\S+)" (?P<status>\d{3}) (?P<bytes>\d+) "(?P<referer>.*?)" "(?P<user_agent>.*?)"'
+            - labels:
+                nginx_method: method
+                nginx_status: status
+
+      # 其他服务保持原始日志

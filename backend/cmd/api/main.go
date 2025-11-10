@@ -33,7 +33,7 @@ func main() {
 		cfg.Database.SSLMode,
 	)
 
-	slogLogger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	slogLogger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(slogLogger)
 
 	authService, err := auth.NewAuthService(
