@@ -43,6 +43,7 @@ func RegisterRoutes(
 		resumeGroup := v1.Group("/resume")
 		resumeGroup.Use(authMiddleware)
 		{
+			resumeGroup.GET("/latest", resumeHandler.GetLatestResume)
 			resumeGroup.POST("", resumeHandler.CreateResume)
 			resumeGroup.GET("/:id/download", resumeHandler.DownloadResume)
 			resumeGroup.GET("/:id/download-link", resumeHandler.GetDownloadLink)

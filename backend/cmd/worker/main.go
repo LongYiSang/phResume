@@ -32,6 +32,11 @@ func main() {
 	}
 	log.Println("database connection ready for worker")
 
+	if err := db.AutoMigrate(&database.User{}, &database.Resume{}); err != nil {
+		log.Fatalf("auto migrate: %v", err)
+	}
+	log.Println("worker database migrated")
+
 	storageClient, err := storage.NewClient(cfg.MinIO)
 	if err != nil {
 		log.Fatalf("init storage client: %v", err)

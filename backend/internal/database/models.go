@@ -1,6 +1,9 @@
 package database
 
-import "gorm.io/gorm"
+import (
+	"gorm.io/datatypes"
+	"gorm.io/gorm"
+)
 
 // User 表示系统中的账号信息。
 type User struct {
@@ -13,10 +16,10 @@ type User struct {
 // Resume 表示用户创建的简历内容。
 type Resume struct {
 	gorm.Model
-	Title   string `gorm:"size:255"`
-	Content string `gorm:"type:text"`
-	UserID  uint   `gorm:"index"`
-	User    User   `gorm:"constraint:OnDelete:CASCADE"`
-	PdfUrl  string `gorm:"size:512"`
-	Status  string `gorm:"size:32"`
+	Title   string         `gorm:"size:255"`
+	Content datatypes.JSON `gorm:"type:jsonb"`
+	UserID  uint           `gorm:"index"`
+	User    User           `gorm:"constraint:OnDelete:CASCADE"`
+	PdfUrl  string         `gorm:"size:512"`
+	Status  string         `gorm:"size:32"`
 }

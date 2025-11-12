@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
 	"phResume/internal/api/middleware"
@@ -36,8 +38,14 @@ func NewResumeHandler(db *gorm.DB, asynqClient *asynq.Client, storageClient *sto
 var errInvalidResumeID = errors.New("invalid resume id")
 
 type createResumeRequest struct {
-	Title   string `json:"title" binding:"required"`
-	Content string `json:"content" binding:"required"`
+	Title   string         `json:"title" binding:"required"`
+	Content datatypes.JSON `json:"content" binding:"required"`
+}
+
+type resumeResponse struct {
+	ID      uint           `json:"id"`
+	Title   string         `json:"title"`
+	Content datatypes.JSON `json:"content"`
 }
 
 // CreateResume 创建简历并保存到数据库。
@@ -54,18 +62,75 @@ func (h *ResumeHandler) CreateResume(c *gin.Context) {
 		return
 	}
 
-	resume := database.Resume{
-		Title:   req.Title,
-		Content: req.Content,
-		UserID:  userID,
-	}
+	ctx := c.Request.Context()
+	var resume database.Resume
+	err := h.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("updated_at desc").
+		First(&resume).Error
 
-	if err := h.db.WithContext(c.Request.Context()).Create(&resume).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create resume"})
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		resume = database.Resume{
+			Title:   req.Title,
+			Content: req.Content,
+			UserID:  userID,
+		}
+		if createErr := h.db.WithContext(ctx).Create(&resume).Error; createErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create resume"})
+			return
+		}
+		c.JSON(http.StatusCreated, newResumeResponse(resume))
+		return
+	case err != nil:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upsert resume"})
+		return
+	default:
+		updates := map[string]any{
+			"title":   req.Title,
+			"content": req.Content,
+		}
+		if updateErr := h.db.WithContext(ctx).Model(&resume).Updates(updates).Error; updateErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update resume"})
+			return
+		}
+		if err := h.db.WithContext(ctx).First(&resume, resume.ID).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load resume"})
+			return
+		}
+		c.JSON(http.StatusOK, newResumeResponse(resume))
+	}
+}
+
+// GetLatestResume 返回用户最近的简历，或默认模板。
+func (h *ResumeHandler) GetLatestResume(c *gin.Context) {
+	userID, ok := userIDFromContext(c)
+	if !ok {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, resume)
+	ctx := c.Request.Context()
+	var resume database.Resume
+	err := h.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("updated_at desc").
+		First(&resume).Error
+
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		c.JSON(http.StatusOK, resumeResponse{
+			ID:      0,
+			Title:   defaultResumeTitle,
+			Content: defaultResumeContent(),
+		})
+		return
+	case err != nil:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query latest resume"})
+		return
+	default:
+		c.JSON(http.StatusOK, newResumeResponse(resume))
+	}
 }
 
 // DownloadResume 将 PDF 生成任务入队并立即返回 202。
@@ -184,4 +249,78 @@ func (h *ResumeHandler) getResumeForUser(ctx context.Context, idParam string, us
 	}
 
 	return &resume, nil
+}
+
+const defaultResumeTitle = "我的第一份简历"
+
+func defaultResumeContent() datatypes.JSON {
+	template := map[string]any{
+		"layout_settings": map[string]any{
+			"columns":       24,
+			"row_height_px": 10,
+			"accent_color":  "#3388ff",
+			"font_family":   "Arial",
+			"font_size_pt":  10,
+			"margin_px":     30,
+		},
+		"items": []map[string]any{
+			{
+				"id":      "item-1",
+				"type":    "text",
+				"content": "你的名字",
+				"style": map[string]any{
+					"fontSize":   "24pt",
+					"fontWeight": "bold",
+				},
+				"layout": map[string]any{
+					"x": 0,
+					"y": 2,
+					"w": 16,
+					"h": 6,
+				},
+			},
+			{
+				"id":      "item-2",
+				"type":    "text",
+				"content": "你的职位/头衔",
+				"style": map[string]any{
+					"fontSize": "14pt",
+				},
+				"layout": map[string]any{
+					"x": 0,
+					"y": 8,
+					"w": 16,
+					"h": 4,
+				},
+			},
+			{
+				"id":      "item-3",
+				"type":    "text",
+				"content": "你的联系方式：\n电话: 123-456-7890\n邮箱: hello@example.com",
+				"style": map[string]any{
+					"fontSize": "10pt",
+				},
+				"layout": map[string]any{
+					"x": 16,
+					"y": 2,
+					"w": 8,
+					"h": 10,
+				},
+			},
+		},
+	}
+
+	data, err := json.Marshal(template)
+	if err != nil {
+		return datatypes.JSON([]byte("{}"))
+	}
+	return datatypes.JSON(data)
+}
+
+func newResumeResponse(resume database.Resume) resumeResponse {
+	return resumeResponse{
+		ID:      resume.ID,
+		Title:   resume.Title,
+		Content: resume.Content,
+	}
 }
