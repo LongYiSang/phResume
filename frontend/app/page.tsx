@@ -4,7 +4,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import RGL, { type Layout } from "react-grid-layout";
 import { PageContainer } from "@/components/PageContainer";
+import { StylePanel } from "@/components/StylePanel";
+import { TextItem } from "@/components/TextItem";
 import { useAuth } from "@/context/AuthContext";
+import type {
+  LayoutSettings,
+  ResumeData,
+  ResumeItem,
+  ResumeItemStyle,
+  ResumeLayout,
+} from "@/types/resume";
 
 type TaskStatus = "idle" | "pending" | "completed";
 
@@ -12,26 +21,80 @@ const GRID_COLS = 24;
 const GRID_ROW_HEIGHT = 10;
 const CANVAS_WIDTH = 900;
 
-type ResumeLayout = {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  [key: string]: unknown;
+const DEFAULT_LAYOUT_SETTINGS: LayoutSettings = {
+  columns: GRID_COLS,
+  row_height_px: GRID_ROW_HEIGHT,
+  accent_color: "#3388ff",
+  font_family: "Arial",
+  font_size_pt: 10,
+  margin_px: 30,
 };
 
-type ResumeItem = {
-  id: string;
-  type: string;
-  content?: string;
-  layout: ResumeLayout;
-  [key: string]: unknown;
-};
+function parseFontSizeValue(value: unknown, fallback: number): number {
+  if (typeof value === "number" && !Number.isNaN(value)) {
+    return value;
+  }
 
-type ResumeData = {
-  layout_settings?: Record<string, unknown>;
-  items: ResumeItem[];
-};
+  if (typeof value === "string") {
+    const parsed = parseFloat(value);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+
+  return fallback;
+}
+
+function normalizeLayoutSettings(
+  raw?: Record<string, unknown>,
+): LayoutSettings {
+  const source = (raw ?? {}) as Record<string, unknown>;
+  const normalized: LayoutSettings = {
+    ...DEFAULT_LAYOUT_SETTINGS,
+    ...(source as Record<string, unknown>),
+  } as LayoutSettings;
+
+  normalized.columns =
+    typeof source["columns"] === "number"
+      ? (source["columns"] as number)
+      : DEFAULT_LAYOUT_SETTINGS.columns;
+  normalized.row_height_px =
+    typeof source["row_height_px"] === "number"
+      ? (source["row_height_px"] as number)
+      : DEFAULT_LAYOUT_SETTINGS.row_height_px;
+  normalized.accent_color =
+    typeof source["accent_color"] === "string"
+      ? (source["accent_color"] as string)
+      : DEFAULT_LAYOUT_SETTINGS.accent_color;
+  normalized.font_family =
+    typeof source["font_family"] === "string"
+      ? (source["font_family"] as string)
+      : DEFAULT_LAYOUT_SETTINGS.font_family;
+  normalized.font_size_pt =
+    typeof source["font_size_pt"] === "number"
+      ? (source["font_size_pt"] as number)
+      : DEFAULT_LAYOUT_SETTINGS.font_size_pt;
+  normalized.margin_px =
+    typeof source["margin_px"] === "number"
+      ? (source["margin_px"] as number)
+      : DEFAULT_LAYOUT_SETTINGS.margin_px;
+
+  return normalized;
+}
+
+function normalizeItemStyle(raw: unknown): ResumeItemStyle {
+  if (!raw || typeof raw !== "object") {
+    return {};
+  }
+
+  const style: ResumeItemStyle = {};
+  Object.entries(raw as Record<string, unknown>).forEach(([key, value]) => {
+    if (typeof value === "string" || typeof value === "number") {
+      style[key] = value;
+    }
+  });
+  return style;
+}
 
 function normalizeResumeContent(content: unknown): ResumeData | null {
   if (!content) {
@@ -58,6 +121,7 @@ function normalizeResumeContent(content: unknown): ResumeData | null {
   };
 
   const itemsSource = Array.isArray(draft.items) ? draft.items : [];
+  const layoutSettings = normalizeLayoutSettings(draft.layout_settings);
 
   const items: ResumeItem[] = itemsSource.map((raw, index) => {
     const item = (raw as Record<string, unknown>) ?? {};
@@ -70,17 +134,20 @@ function normalizeResumeContent(content: unknown): ResumeData | null {
       h: typeof layoutRaw.h === "number" ? layoutRaw.h : 4,
     };
 
+    const style = normalizeItemStyle(item.style);
+
     return {
-      ...(item as Omit<ResumeItem, "id" | "layout">),
+      ...(item as Omit<ResumeItem, "id" | "layout" | "style" | "content">),
       id: typeof item.id === "string" ? item.id : `item-${index}`,
       type: typeof item.type === "string" ? item.type : "text",
-      content: typeof item.content === "string" ? item.content : undefined,
+      content: typeof item.content === "string" ? item.content : "",
       layout,
+      style,
     };
   });
 
   return {
-    layout_settings: draft.layout_settings,
+    layout_settings: layoutSettings,
     items,
   };
 }
@@ -95,6 +162,7 @@ export default function Home() {
   const [isFetchingResume, setIsFetchingResume] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [taskStatus, setTaskStatus] = useState<TaskStatus>("idle");
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
 
   const fetchDownloadLink = useCallback(
@@ -143,12 +211,32 @@ export default function Home() {
     }
   }, [isAuthenticated, router]);
 
+  const resolveWebSocketURL = useCallback(() => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+    const envURL = process.env.NEXT_PUBLIC_WS_URL;
+    if (envURL && envURL.length > 0) {
+      return envURL;
+    }
+
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const host = window.location.host;
+    return `${protocol}//${host}/api/v1/ws`;
+  }, []);
+
   useEffect(() => {
     if (!isAuthenticated || !accessToken) {
       return;
     }
 
-    const ws = new WebSocket("ws://localhost/api/v1/ws");
+    const wsURL = resolveWebSocketURL();
+    if (!wsURL) {
+      console.warn("WebSocket URL unavailable, skipping connection.");
+      return;
+    }
+
+    const ws = new WebSocket(wsURL);
     socketRef.current = ws;
 
     ws.onopen = () => {
@@ -175,7 +263,8 @@ export default function Home() {
     };
 
     ws.onerror = () => {
-      console.error("WebSocket error.");
+      console.warn("WebSocket error, closing connection.");
+      ws.close();
       socketRef.current = null;
     };
 
@@ -183,7 +272,7 @@ export default function Home() {
       ws.close();
       socketRef.current = null;
     };
-  }, [isAuthenticated, accessToken, fetchDownloadLink]);
+  }, [isAuthenticated, accessToken, fetchDownloadLink, resolveWebSocketURL]);
 
   const fetchLatestResume = useCallback(async () => {
     if (!accessToken) {
@@ -362,8 +451,127 @@ export default function Home() {
     [],
   );
 
+  const handleSettingsChange = useCallback(
+    (newSettings: LayoutSettings) => {
+      setResumeData((prev) => {
+        if (!prev) {
+          return prev;
+        }
+        return { ...prev, layout_settings: newSettings };
+      });
+    },
+    [],
+  );
+
+  const handleContentChange = useCallback((itemId: string, newHtml: string) => {
+    setResumeData((prev) => {
+      if (!prev) {
+        return prev;
+      }
+
+      const updatedItems = prev.items.map((item) =>
+        item.id === itemId ? { ...item, content: newHtml } : item,
+      );
+
+      return { ...prev, items: updatedItems };
+    });
+  }, []);
+
+  const currentColumns =
+    resumeData?.layout_settings?.columns ?? GRID_COLS;
+  const currentRowHeight =
+    resumeData?.layout_settings?.row_height_px ?? GRID_ROW_HEIGHT;
+
+  const selectedItem = useMemo(() => {
+    if (!resumeData || !selectedItemId) {
+      return null;
+    }
+    return resumeData.items.find((item) => item.id === selectedItemId) ?? null;
+  }, [resumeData, selectedItemId]);
+
+  const selectedItemFontSize = useMemo(() => {
+    if (!selectedItem || !resumeData?.layout_settings) {
+      return null;
+    }
+    return parseFontSizeValue(
+      selectedItem.style?.fontSize,
+      resumeData.layout_settings.font_size_pt,
+    );
+  }, [selectedItem, resumeData?.layout_settings]);
+
+  const selectedItemColor = useMemo(() => {
+    if (!selectedItem || !resumeData?.layout_settings) {
+      return null;
+    }
+    const rawColor = selectedItem.style?.color;
+    if (typeof rawColor === "string" && rawColor.trim().length > 0) {
+      return rawColor;
+    }
+    return resumeData.layout_settings.accent_color;
+  }, [selectedItem, resumeData?.layout_settings]);
+
+  const handleItemFontSizeChange = useCallback(
+    (newSizePt: number) => {
+      setResumeData((prev) => {
+        if (!prev || !selectedItemId) {
+          return prev;
+        }
+
+        const updatedItems = prev.items.map((item) => {
+          if (item.id !== selectedItemId) {
+            return item;
+          }
+
+          const currentStyle = item.style ?? {};
+          return {
+            ...item,
+            style: {
+              ...currentStyle,
+              fontSize: `${newSizePt}pt`,
+            },
+          };
+        });
+
+        return { ...prev, items: updatedItems };
+      });
+    },
+    [selectedItemId],
+  );
+
+  const handleItemColorChange = useCallback(
+    (newColor: string) => {
+      setResumeData((prev) => {
+        if (!prev || !selectedItemId) {
+          return prev;
+        }
+
+        const updatedItems = prev.items.map((item) => {
+          if (item.id !== selectedItemId) {
+            return item;
+          }
+
+          const currentStyle = item.style ?? {};
+          return {
+            ...item,
+            style: {
+              ...currentStyle,
+              color: newColor,
+            },
+          };
+        });
+
+        return { ...prev, items: updatedItems };
+      });
+    },
+    [selectedItemId],
+  );
+
+  const handleSelectItem = useCallback((itemId: string) => {
+    setSelectedItemId(itemId);
+  }, []);
+
   return (
-    <div className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 px-6 py-12">
+    <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-6 py-12">
       <header>
         <h1 className="text-3xl font-semibold text-zinc-950 dark:text-zinc-50">
           简历编辑器
@@ -386,40 +594,85 @@ export default function Home() {
         placeholder="请输入简历标题"
       />
 
-      <div className="w-full rounded-md border border-dashed border-zinc-300 bg-zinc-50/60 p-4">
-        {resumeData ? (
-          <PageContainer width={CANVAS_WIDTH}>
-            <RGL
-              layout={layout}
-              cols={GRID_COLS}
-              rowHeight={GRID_ROW_HEIGHT}
-              width={CANVAS_WIDTH}
-              onLayoutChange={handleLayoutChange}
-            >
-              {resumeData.items.map((item) => (
-                <div
-                  key={item.id}
+      <div className="flex flex-col gap-6 lg:flex-row">
+        <div className="lg:w-80">
+          {resumeData ? (
+            <StylePanel
+              settings={resumeData.layout_settings}
+              onSettingsChange={handleSettingsChange}
+              selectedItemFontSize={selectedItemFontSize}
+              onSelectedItemFontSizeChange={handleItemFontSizeChange}
+              selectedItemColor={selectedItemColor}
+              onSelectedItemColorChange={handleItemColorChange}
+            />
+          ) : (
+            <div className="rounded-xl border border-dashed border-zinc-300 bg-white/70 p-4 text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-400">
+              {isFetchingResume ? "正在加载样式配置..." : "暂无样式可编辑"}
+            </div>
+          )}
+        </div>
+
+        <div className="flex-1">
+          <div className="w-full rounded-md border border-dashed border-zinc-300 bg-zinc-50/60 p-4">
+            {resumeData ? (
+              <div className="overflow-x-auto">
+                <PageContainer
+                  width={CANVAS_WIDTH}
                   style={{
-                    border: "1px dashed #ccc",
-                    backgroundColor: "rgba(255,255,255,0.9)",
-                    padding: "0.5rem",
-                    color: "#1f2937",
-                    fontSize: "12px",
-                    overflow: "hidden",
+                    fontFamily: resumeData.layout_settings.font_family,
+                    fontSize: `${resumeData.layout_settings.font_size_pt}pt`,
+                    color: resumeData.layout_settings.accent_color,
+                    padding: `${resumeData.layout_settings.margin_px}px`,
                   }}
                 >
-                  {item.type === "text"
-                    ? item.content ?? "文本"
-                    : `[${item.type}]`}
-                </div>
-              ))}
-            </RGL>
-          </PageContainer>
-        ) : (
-          <div className="py-10 text-center text-sm text-zinc-500">
-            {isFetchingResume ? "正在加载布局..." : "暂无简历布局数据"}
+                  <RGL
+                    className="h-full w-full"
+                    layout={layout}
+                    cols={currentColumns}
+                    rowHeight={currentRowHeight}
+                    draggableHandle=".rgl-drag-handle"
+                    draggableCancel=".text-item-editor"
+                    width={CANVAS_WIDTH}
+                    onLayoutChange={handleLayoutChange}
+                  >
+                    {resumeData.items.map((item) => (
+                      <div
+                        key={item.id}
+                        className={`relative h-full w-full rounded-md border border-dashed bg-white/90 px-2 pb-4 pt-6 text-sm text-zinc-900 shadow-sm ${
+                          selectedItemId === item.id
+                            ? "border-blue-500"
+                            : "border-zinc-200"
+                        }`}
+                        onMouseDownCapture={() => handleSelectItem(item.id)}
+                        onFocus={() => handleSelectItem(item.id)}
+                        tabIndex={0}
+                      >
+                        <div className="rgl-drag-handle absolute right-2 top-2 cursor-move rounded-full border border-zinc-300 bg-white/80 px-2 py-0.5 text-xs text-zinc-500 shadow-sm hover:bg-white">
+                          拖动
+                        </div>
+                        <TextItem
+                          html={item.content}
+                          style={{
+                            fontSize: `${resumeData.layout_settings.font_size_pt}pt`,
+                            color: resumeData.layout_settings.accent_color,
+                            ...(item.style ?? {}),
+                          }}
+                          onChange={(newHtml) =>
+                            handleContentChange(item.id, newHtml)
+                          }
+                        />
+                      </div>
+                    ))}
+                  </RGL>
+                </PageContainer>
+              </div>
+            ) : (
+              <div className="py-10 text-center text-sm text-zinc-500">
+                {isFetchingResume ? "正在加载布局..." : "暂无简历布局数据"}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-4">

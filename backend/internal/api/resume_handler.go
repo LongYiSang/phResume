@@ -254,60 +254,70 @@ func (h *ResumeHandler) getResumeForUser(ctx context.Context, idParam string, us
 const defaultResumeTitle = "我的第一份简历"
 
 func defaultResumeContent() datatypes.JSON {
+	layoutSettings := map[string]any{
+		"columns":       24,
+		"row_height_px": 10,
+		"accent_color":  "#3388ff",
+		"font_family":   "Arial",
+		"font_size_pt":  10,
+		"margin_px":     30,
+	}
+
+	items := []map[string]any{
+		{
+			"id":      "item-1",
+			"type":    "text",
+			"content": "你的名字",
+			"style": map[string]any{
+				"fontSize":   "24pt",
+				"fontWeight": "bold",
+			},
+			"layout": map[string]any{
+				"x": 0,
+				"y": 2,
+				"w": 16,
+				"h": 6,
+			},
+		},
+		{
+			"id":      "item-2",
+			"type":    "text",
+			"content": "你的职位/头衔",
+			"style": map[string]any{
+				"fontSize": "14pt",
+			},
+			"layout": map[string]any{
+				"x": 0,
+				"y": 8,
+				"w": 16,
+				"h": 4,
+			},
+		},
+		{
+			"id":      "item-3",
+			"type":    "text",
+			"content": "你的联系方式：\n电话: 123-456-7890\n邮箱: hello@example.com",
+			"style": map[string]any{
+				"fontSize": "10pt",
+			},
+			"layout": map[string]any{
+				"x": 16,
+				"y": 2,
+				"w": 8,
+				"h": 10,
+			},
+		},
+	}
+
+	for _, item := range items {
+		if _, ok := item["style"]; !ok || item["style"] == nil {
+			item["style"] = map[string]any{}
+		}
+	}
+
 	template := map[string]any{
-		"layout_settings": map[string]any{
-			"columns":       24,
-			"row_height_px": 10,
-			"accent_color":  "#3388ff",
-			"font_family":   "Arial",
-			"font_size_pt":  10,
-			"margin_px":     30,
-		},
-		"items": []map[string]any{
-			{
-				"id":      "item-1",
-				"type":    "text",
-				"content": "你的名字",
-				"style": map[string]any{
-					"fontSize":   "24pt",
-					"fontWeight": "bold",
-				},
-				"layout": map[string]any{
-					"x": 0,
-					"y": 2,
-					"w": 16,
-					"h": 6,
-				},
-			},
-			{
-				"id":      "item-2",
-				"type":    "text",
-				"content": "你的职位/头衔",
-				"style": map[string]any{
-					"fontSize": "14pt",
-				},
-				"layout": map[string]any{
-					"x": 0,
-					"y": 8,
-					"w": 16,
-					"h": 4,
-				},
-			},
-			{
-				"id":      "item-3",
-				"type":    "text",
-				"content": "你的联系方式：\n电话: 123-456-7890\n邮箱: hello@example.com",
-				"style": map[string]any{
-					"fontSize": "10pt",
-				},
-				"layout": map[string]any{
-					"x": 16,
-					"y": 2,
-					"w": 8,
-					"h": 10,
-				},
-			},
-		},
+		"layout_settings": layoutSettings,
+		"items":           items,
 	}
 
 	data, err := json.Marshal(template)
