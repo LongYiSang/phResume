@@ -2,6 +2,7 @@ package api
 
 import (
 	"log/slog"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
@@ -24,7 +25,7 @@ func RegisterRoutes(
 	storageClient *storage.Client,
 	clamdAddr string,
 ) {
-	resumeHandler := NewResumeHandler(db, asynqClient, storageClient)
+	resumeHandler := NewResumeHandler(db, asynqClient, storageClient, os.Getenv("INTERNAL_API_SECRET"))
 	authHandler := NewAuthHandler(db, authService, redisClient, logger)
 	wsHandler := NewWsHandler(redisClient, authService, logger)
 	authMiddleware := middleware.AuthMiddleware(authService)
@@ -41,6 +42,8 @@ func RegisterRoutes(
 			authGroup.POST("/refresh", authHandler.Refresh)
 			authGroup.POST("/logout", authMiddleware, authHandler.Logout)
 		}
+
+		v1.GET("/resume/print/:id", resumeHandler.GetPrintResumeData)
 
 		resumeGroup := v1.Group("/resume")
 		resumeGroup.Use(authMiddleware)

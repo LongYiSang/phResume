@@ -87,6 +87,7 @@ services:
       MINIO_SECRET_ACCESS_KEY: minioadmin
       MINIO_BUCKET: resumes
       MINIO_USE_SSL: 'false'
+      INTERNAL_API_SECRET: your-random-string
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
       JWT_ACCESS_TOKEN_TTL: ${JWT_ACCESS_TOKEN_TTL}
@@ -108,6 +109,7 @@ services:
     environment:
       NEXT_PUBLIC_API_BASE_URL: http://localhost/api
       API_INTERNAL_URL: http://api:8080
+      NEXT_PUBLIC_INTERNAL_API_URL: /api
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -147,6 +149,7 @@ services:
       MINIO_SECRET_ACCESS_KEY: minioadmin
       MINIO_BUCKET: resumes
       MINIO_USE_SSL: 'false'
+      INTERNAL_API_SECRET: your-random-string
     volumes:
       - ./backend:/app
     command: air -c .air.worker.toml

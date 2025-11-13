@@ -52,7 +52,8 @@ function parseHtmlToNodes(editor: LexicalEditor, html: string): LexicalNode[] {
 type TextItemProps = {
   html: string;
   style?: CSSProperties;
-  onChange: (newHtml: string) => void;
+  onChange?: (newHtml: string) => void;
+  readOnly?: boolean;
 };
 
 type ExternalHtmlSyncPluginProps = {
@@ -85,7 +86,32 @@ function ExternalHtmlSyncPlugin({
   return null;
 }
 
-export function TextItem({ html, style, onChange }: TextItemProps) {
+export function TextItem({
+  html,
+  style,
+  onChange,
+  readOnly = false,
+}: TextItemProps) {
+  const baseStyle: CSSProperties = {
+    width: "100%",
+    minHeight: "100%",
+    outline: "none",
+    border: "none",
+    background: "transparent",
+    cursor: readOnly ? "default" : "text",
+    whiteSpace: "pre-wrap",
+  };
+
+  if (readOnly || !onChange) {
+    return (
+      <div
+        className="text-item-readonly pointer-events-none select-none"
+        style={{ ...baseStyle, ...style }}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    );
+  }
+
   const initialHtmlRef = useRef(html);
   const lastSyncedHtmlRef = useRef(html);
 
@@ -107,16 +133,6 @@ export function TextItem({ html, style, onChange }: TextItemProps) {
     }),
     [],
   );
-
-  const baseStyle: CSSProperties = {
-    width: "100%",
-    minHeight: "100%",
-    outline: "none",
-    border: "none",
-    background: "transparent",
-    cursor: "text",
-    whiteSpace: "pre-wrap",
-  };
 
   const handleEditorChange = useCallback(
     (editorState: EditorState, editor: LexicalEditor) => {

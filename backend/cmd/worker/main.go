@@ -70,7 +70,12 @@ func main() {
 		}
 	}()
 
-	pdfHandler := worker.NewPDFTaskHandler(db, storageClient, redisClient, logger)
+	internalSecret := os.Getenv("INTERNAL_API_SECRET")
+	if internalSecret == "" {
+		logger.Warn("INTERNAL_API_SECRET is empty, worker cannot call print API securely")
+	}
+
+	pdfHandler := worker.NewPDFTaskHandler(db, storageClient, redisClient, logger, internalSecret)
 
 	mux := asynq.NewServeMux()
 	mux.Use(metrics.AsynqMetricsMiddleware())

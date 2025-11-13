@@ -7,16 +7,24 @@ import type { CSSProperties } from "react";
 import { useAuth } from "@/context/AuthContext";
 
 type ImageItemProps = {
-  objectKey: string;
+  objectKey?: string;
   style?: CSSProperties;
+  preSignedURL?: string;
 };
 
-export function ImageItem({ objectKey, style }: ImageItemProps) {
+export function ImageItem({ objectKey, style, preSignedURL }: ImageItemProps) {
   const { accessToken } = useAuth();
-  const [imageURL, setImageURL] = useState<string | null>(null);
+  const [imageURL, setImageURL] = useState<string | null>(
+    preSignedURL ?? null,
+  );
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
+    if (preSignedURL) {
+      setImageURL(preSignedURL);
+      return;
+    }
+
     if (!objectKey || !accessToken) {
       setImageURL(null);
       return;
@@ -61,15 +69,18 @@ export function ImageItem({ objectKey, style }: ImageItemProps) {
     return () => {
       isMounted = false;
     };
-  }, [objectKey, accessToken]);
+  }, [objectKey, accessToken, preSignedURL]);
 
-  const combinedStyle = useMemo<CSSProperties>(() => ({
-    width: "100%",
-    height: "100%",
-    objectFit: "cover",
-    borderRadius: "0.375rem",
-    ...style,
-  }), [style]);
+  const combinedStyle = useMemo<CSSProperties>(
+    () => ({
+      width: "100%",
+      height: "100%",
+      objectFit: "cover",
+      borderRadius: "0.375rem",
+      ...style,
+    }),
+    [style],
+  );
 
   if (!imageURL) {
     return (

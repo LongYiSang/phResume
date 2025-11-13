@@ -2,10 +2,14 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,23 +19,26 @@ import (
 
 	"phResume/internal/api/middleware"
 	"phResume/internal/database"
+	"phResume/internal/resume"
 	"phResume/internal/storage"
 	"phResume/internal/tasks"
 )
 
 // ResumeHandler 负责处理与简历相关的 API 请求。
 type ResumeHandler struct {
-	db          *gorm.DB
-	asynqClient *asynq.Client
-	storage     *storage.Client
+	db             *gorm.DB
+	asynqClient    *asynq.Client
+	storage        *storage.Client
+	internalSecret string
 }
 
 // NewResumeHandler 构造 ResumeHandler。
-func NewResumeHandler(db *gorm.DB, asynqClient *asynq.Client, storageClient *storage.Client) *ResumeHandler {
+func NewResumeHandler(db *gorm.DB, asynqClient *asynq.Client, storageClient *storage.Client, internalSecret string) *ResumeHandler {
 	return &ResumeHandler{
-		db:          db,
-		asynqClient: asynqClient,
-		storage:     storageClient,
+		db:             db,
+		asynqClient:    asynqClient,
+		storage:        storageClient,
+		internalSecret: internalSecret,
 	}
 }
 
@@ -233,6 +240,81 @@ func (h *ResumeHandler) GetDownloadLink(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"url": signedURL})
+}
+
+// GetPrintResumeData 返回渲染 PDF 所需的 JSON 数据，附带预签名图像链接。
+func (h *ResumeHandler) GetPrintResumeData(c *gin.Context) {
+	if h.internalSecret == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal api secret is not configured"})
+		return
+	}
+
+	token := strings.TrimSpace(c.Query("internal_token"))
+	if token == "" || token != h.internalSecret {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	resumeID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resume id"})
+		return
+	}
+
+	var resumeModel database.Resume
+	ctx := c.Request.Context()
+	if err := h.db.WithContext(ctx).First(&resumeModel, uint(resumeID)).Error; err != nil {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "resume not found"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load resume"})
+		}
+		return
+	}
+
+	var content resume.Content
+	if err := json.Unmarshal(resumeModel.Content, &content); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode resume"})
+		return
+	}
+
+	imagePrefix := fmt.Sprintf("user-assets/%d/", resumeModel.UserID)
+	for idx := range content.Items {
+		if content.Items[idx].Type != "image" {
+			continue
+		}
+		objectKey := strings.TrimSpace(content.Items[idx].Content)
+		if objectKey == "" {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "image object key missing"})
+			return
+		}
+		if !strings.HasPrefix(objectKey, imagePrefix) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "invalid image object key"})
+			return
+		}
+		obj, err := h.storage.GetObject(ctx, objectKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch image"})
+			return
+		}
+		stat, statErr := obj.Stat()
+		contentType := "image/png"
+		if statErr == nil && stat.ContentType != "" {
+			contentType = stat.ContentType
+		}
+		imageBytes, err := io.ReadAll(obj)
+		_ = obj.Close()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read image"})
+			return
+		}
+		base64Image := base64.StdEncoding.EncodeToString(imageBytes)
+		dataURI := fmt.Sprintf("data:%s;base64,%s", contentType, base64Image)
+		content.Items[idx].Content = dataURI
+	}
+
+	c.JSON(http.StatusOK, content)
 }
 
 func (h *ResumeHandler) getResumeForUser(ctx context.Context, idParam string, userID uint) (*database.Resume, error) {
