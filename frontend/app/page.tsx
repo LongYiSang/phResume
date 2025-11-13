@@ -29,7 +29,7 @@ type TaskStatus = "idle" | "pending" | "completed";
 
 const GRID_COLS = 24;
 const GRID_ROW_HEIGHT = 10;
-const CANVAS_WIDTH = 900;
+const CANVAS_WIDTH = 794; // 必须与 pdf_template.go (794px) 匹配
 
 const DEFAULT_LAYOUT_SETTINGS: LayoutSettings = {
   columns: GRID_COLS,
@@ -792,6 +792,8 @@ export default function Home() {
                     draggableHandle=".rgl-drag-handle"
                     draggableCancel=".text-item-editor"
                     width={CANVAS_WIDTH}
+                    margin={[0, 0]}
+                    containerPadding={[0, 0]}
                     onLayoutChange={handleLayoutChange}
                   >
                     {resumeData.items.map((item) => {
@@ -818,12 +820,13 @@ export default function Home() {
                       return (
                         <div
                           key={item.id}
-                          className={`relative h-full w-full rounded-md border border-dashed bg-white/90 px-2 pb-4 pt-6 text-sm text-zinc-900 shadow-sm ${
+                          className={`relative h-full w-full rounded-md border border-dashed bg-white/90 text-sm text-zinc-900 shadow-sm ${
                             isSelected ? "border-blue-500" : "border-zinc-200"
                           }`}
                           onMouseDownCapture={() => handleSelectItem(item.id)}
                           onFocus={() => handleSelectItem(item.id)}
                           tabIndex={0}
+                          style={{ padding: "10px" }}
                         >
                           <div className="rgl-drag-handle absolute right-2 top-2 cursor-move rounded-full border border-zinc-300 bg-white/80 px-2 py-0.5 text-xs text-zinc-500 shadow-sm hover:bg-white">
                             拖动

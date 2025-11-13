@@ -33,9 +33,10 @@ const PDFTemplateString = `
             grid-auto-rows: 10px;                   /* 10px 行高 */
             gap: 0; /* 间隙由 RGL 的布局处理 */
         }
-        .grid-item {
-            /* overflow: hidden; */ /* 调试时可以注释掉 */
-        }
+	    .grid-item {
+	        /* overflow: hidden; */ /* 调试时可以注释掉 */
+	        padding: 10px; /* 确保与前端 React Grid Item 的 padding 匹配 */
+	    }
         .item-text {
             /* Lexical 输出的 HTML 已经包含了 <p> 等标签 */
             width: 100%;
