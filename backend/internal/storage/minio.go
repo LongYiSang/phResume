@@ -80,6 +80,15 @@ func (c *Client) UploadFile(ctx context.Context, objectName string, reader io.Re
 	return &info, nil
 }
 
+// GetObject 直接读取私有 Bucket 中的对象。
+func (c *Client) GetObject(ctx context.Context, objectKey string) (*minio.Object, error) {
+	obj, err := c.internalClient.GetObject(ctx, c.bucketName, objectKey, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("get object %q: %w", objectKey, err)
+	}
+	return obj, nil
+}
+
 // GeneratePresignedURL 生成对象的限时下载链接。
 func (c *Client) GeneratePresignedURL(ctx context.Context, objectKey string, duration time.Duration) (string, error) {
 	presignedURL, err := c.publicClient.PresignedGetObject(ctx, c.bucketName, objectKey, duration, nil)

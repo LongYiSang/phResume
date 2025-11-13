@@ -51,6 +51,11 @@ func GeneratePDFFromHTML(htmlContent string) ([]byte, error) {
 		return nil, fmt.Errorf("wait load: %w", err)
 	}
 
+	// go-rod 默认按照 print 媒体渲染，这里强制使用 screen 以匹配前端的 CSS Grid。
+	if err := (proto.EmulationSetEmulatedMedia{Media: "screen"}).Call(page); err != nil {
+		return nil, fmt.Errorf("emulate media: %w", err)
+	}
+
 	reader, err := page.PDF(&proto.PagePrintToPDF{
 		PrintBackground:   true,
 		PreferCSSPageSize: true,
