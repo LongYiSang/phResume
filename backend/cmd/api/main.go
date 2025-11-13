@@ -101,6 +101,8 @@ func main() {
 		}
 	}()
 
+	clamdAddr := fmt.Sprintf("tcp://%s:%s", cfg.ClamAV.Host, cfg.ClamAV.Port)
+
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(metrics.GinMiddleware())
@@ -111,7 +113,7 @@ func main() {
 	})
 	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
-	api.RegisterRoutes(router, db, asynqClient, authService, redisClient, slogLogger, storageClient)
+	api.RegisterRoutes(router, db, asynqClient, authService, redisClient, slogLogger, storageClient, clamdAddr)
 
 	if err := router.Run(address); err != nil {
 		log.Fatalf("failed to start api server: %v", err)

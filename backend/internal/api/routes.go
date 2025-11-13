@@ -22,11 +22,13 @@ func RegisterRoutes(
 	redisClient *redis.Client,
 	logger *slog.Logger,
 	storageClient *storage.Client,
+	clamdAddr string,
 ) {
 	resumeHandler := NewResumeHandler(db, asynqClient, storageClient)
 	authHandler := NewAuthHandler(db, authService, redisClient, logger)
 	wsHandler := NewWsHandler(redisClient, authService, logger)
 	authMiddleware := middleware.AuthMiddleware(authService)
+	assetHandler := NewAssetHandler(storageClient, logger, clamdAddr)
 
 	v1 := router.Group("/v1")
 	{
@@ -47,6 +49,13 @@ func RegisterRoutes(
 			resumeGroup.POST("", resumeHandler.CreateResume)
 			resumeGroup.GET("/:id/download", resumeHandler.DownloadResume)
 			resumeGroup.GET("/:id/download-link", resumeHandler.GetDownloadLink)
+		}
+
+		assetGroup := v1.Group("/assets")
+		assetGroup.Use(authMiddleware)
+		{
+			assetGroup.POST("/upload", assetHandler.UploadAsset)
+			assetGroup.GET("/view", assetHandler.GetAssetURL)
 		}
 	}
 }

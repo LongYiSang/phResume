@@ -3,6 +3,7 @@ module phResume
 go 1.25.3
 
 require (
+	github.com/dutchcoders/go-clamd v0.0.0-20170520113014-b970184f4d9e
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-rod/rod v0.116.2
 	github.com/golang-jwt/jwt/v5 v5.2.1

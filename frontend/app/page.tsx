@@ -1,11 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react";
 import { useRouter } from "next/navigation";
 import RGL, { type Layout } from "react-grid-layout";
+import { v4 as uuidv4 } from "uuid";
 import { PageContainer } from "@/components/PageContainer";
 import { StylePanel } from "@/components/StylePanel";
 import { TextItem } from "@/components/TextItem";
+import { DividerItem } from "@/components/DividerItem";
+import { ImageItem } from "@/components/ImageItem";
 import { useAuth } from "@/context/AuthContext";
 import type {
   LayoutSettings,
@@ -163,7 +173,9 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [taskStatus, setTaskStatus] = useState<TaskStatus>("idle");
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [isUploadingAsset, setIsUploadingAsset] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const fetchDownloadLink = useCallback(
     async (resumeId: number) => {
@@ -387,6 +399,7 @@ export default function Home() {
         throw new Error("下载失败");
       }
     } catch (err) {
+      console.error("生成任务提交失败", err);
       setError("生成任务提交失败，请稍后重试");
       setTaskStatus("idle");
     }
@@ -566,6 +579,115 @@ export default function Home() {
     [selectedItemId],
   );
 
+  const handleAddDivider = useCallback(() => {
+    if (!resumeData) {
+      setError("简历内容尚未加载完成");
+      return;
+    }
+
+    const accentColor =
+      resumeData.layout_settings?.accent_color ??
+      DEFAULT_LAYOUT_SETTINGS.accent_color;
+
+    const newDivider: ResumeItem = {
+      id: uuidv4(),
+      type: "divider",
+      content: "",
+      layout: { x: 0, y: 0, w: 24, h: 2 },
+      style: {
+        borderTop: `2px solid ${accentColor}`,
+        margin: "8px 0",
+      },
+    };
+
+    setResumeData((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      return { ...prev, items: [...prev.items, newDivider] };
+    });
+  }, [resumeData]);
+
+  const handleAddImageClick = useCallback(() => {
+    if (!resumeData) {
+      setError("简历内容尚未加载完成");
+      return;
+    }
+    if (!accessToken) {
+      setError("请先登录");
+      return;
+    }
+    fileInputRef.current?.click();
+  }, [resumeData, accessToken]);
+
+  const handleImageUpload = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) {
+        return;
+      }
+
+      if (!accessToken) {
+        setError("请先登录");
+        event.target.value = "";
+        return;
+      }
+
+      setError(null);
+      setIsUploadingAsset(true);
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      try {
+        const response = await fetch("/api/v1/assets/upload", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: formData,
+        });
+
+        if (!response.ok) {
+          throw new Error("upload failed");
+        }
+
+        const data = await response.json();
+        const objectKey = data?.objectKey;
+
+        if (typeof objectKey !== "string" || objectKey.length === 0) {
+          throw new Error("missing object key");
+        }
+
+        setResumeData((prev) => {
+          if (!prev) {
+            return prev;
+          }
+
+          const newImage: ResumeItem = {
+            id: uuidv4(),
+            type: "image",
+            content: objectKey,
+            layout: { x: 0, y: 0, w: 6, h: 10 },
+            style: {
+              borderRadius: "0.375rem",
+              objectFit: "cover",
+            },
+          };
+
+          return { ...prev, items: [...prev.items, newImage] };
+        });
+      } catch (err) {
+        console.error("图片上传失败", err);
+        setError("图片上传失败，请重试");
+      } finally {
+        setIsUploadingAsset(false);
+        event.target.value = "";
+      }
+    },
+    [accessToken],
+  );
+
   const handleSelectItem = useCallback((itemId: string) => {
     setSelectedItemId(itemId);
   }, []);
@@ -595,21 +717,58 @@ export default function Home() {
       />
 
       <div className="flex flex-col gap-6 lg:flex-row">
-        <div className="lg:w-80">
-          {resumeData ? (
-            <StylePanel
-              settings={resumeData.layout_settings}
-              onSettingsChange={handleSettingsChange}
-              selectedItemFontSize={selectedItemFontSize}
-              onSelectedItemFontSizeChange={handleItemFontSizeChange}
-              selectedItemColor={selectedItemColor}
-              onSelectedItemColorChange={handleItemColorChange}
-            />
-          ) : (
-            <div className="rounded-xl border border-dashed border-zinc-300 bg-white/70 p-4 text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-400">
-              {isFetchingResume ? "正在加载样式配置..." : "暂无样式可编辑"}
+        <div className="lg:w-80 space-y-4">
+          <div>
+            {resumeData ? (
+              <StylePanel
+                settings={resumeData.layout_settings}
+                onSettingsChange={handleSettingsChange}
+                selectedItemFontSize={selectedItemFontSize}
+                onSelectedItemFontSizeChange={handleItemFontSizeChange}
+                selectedItemColor={selectedItemColor}
+                onSelectedItemColorChange={handleItemColorChange}
+              />
+            ) : (
+              <div className="rounded-xl border border-dashed border-zinc-300 bg-white/70 p-4 text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-400">
+                {isFetchingResume ? "正在加载样式配置..." : "暂无样式可编辑"}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
+              元素库
+            </h2>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              添加新的分割线或图片模块，随时调整布局。
+            </p>
+
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={handleAddDivider}
+                disabled={!resumeData}
+                className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800"
+              >
+                添加分割线
+              </button>
+              <button
+                type="button"
+                onClick={handleAddImageClick}
+                disabled={!resumeData || isUploadingAsset}
+                className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800"
+              >
+                {isUploadingAsset ? "图片上传中..." : "添加图片"}
+              </button>
             </div>
-          )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleImageUpload}
+            />
+          </div>
         </div>
 
         <div className="flex-1">
@@ -635,34 +794,72 @@ export default function Home() {
                     width={CANVAS_WIDTH}
                     onLayoutChange={handleLayoutChange}
                   >
-                    {resumeData.items.map((item) => (
-                      <div
-                        key={item.id}
-                        className={`relative h-full w-full rounded-md border border-dashed bg-white/90 px-2 pb-4 pt-6 text-sm text-zinc-900 shadow-sm ${
-                          selectedItemId === item.id
-                            ? "border-blue-500"
-                            : "border-zinc-200"
-                        }`}
-                        onMouseDownCapture={() => handleSelectItem(item.id)}
-                        onFocus={() => handleSelectItem(item.id)}
-                        tabIndex={0}
-                      >
-                        <div className="rgl-drag-handle absolute right-2 top-2 cursor-move rounded-full border border-zinc-300 bg-white/80 px-2 py-0.5 text-xs text-zinc-500 shadow-sm hover:bg-white">
-                          拖动
+                    {resumeData.items.map((item) => {
+                      const isSelected = selectedItemId === item.id;
+                      const baseStyle = {
+                        fontSize: `${resumeData.layout_settings.font_size_pt}pt`,
+                        color: resumeData.layout_settings.accent_color,
+                        ...(item.style ?? {}),
+                      };
+
+                      const dividerStyle = {
+                        borderColor: resumeData.layout_settings.accent_color,
+                        ...(item.style ?? {}),
+                      };
+
+                      const imageStyle = {
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover" as const,
+                        borderRadius: "0.375rem",
+                        ...(item.style ?? {}),
+                      };
+
+                      return (
+                        <div
+                          key={item.id}
+                          className={`relative h-full w-full rounded-md border border-dashed bg-white/90 px-2 pb-4 pt-6 text-sm text-zinc-900 shadow-sm ${
+                            isSelected ? "border-blue-500" : "border-zinc-200"
+                          }`}
+                          onMouseDownCapture={() => handleSelectItem(item.id)}
+                          onFocus={() => handleSelectItem(item.id)}
+                          tabIndex={0}
+                        >
+                          <div className="rgl-drag-handle absolute right-2 top-2 cursor-move rounded-full border border-zinc-300 bg-white/80 px-2 py-0.5 text-xs text-zinc-500 shadow-sm hover:bg-white">
+                            拖动
+                          </div>
+
+                          {item.type === "text" && (
+                            <TextItem
+                              html={item.content}
+                              style={baseStyle}
+                              onChange={(newHtml) =>
+                                handleContentChange(item.id, newHtml)
+                              }
+                            />
+                          )}
+
+                          {item.type === "divider" && (
+                            <DividerItem style={dividerStyle} />
+                          )}
+
+                          {item.type === "image" && (
+                            <ImageItem
+                              objectKey={item.content}
+                              style={imageStyle}
+                            />
+                          )}
+
+                          {item.type !== "text" &&
+                            item.type !== "divider" &&
+                            item.type !== "image" && (
+                              <div className="text-xs text-red-500">
+                                暂不支持的类型：{item.type}
+                              </div>
+                            )}
                         </div>
-                        <TextItem
-                          html={item.content}
-                          style={{
-                            fontSize: `${resumeData.layout_settings.font_size_pt}pt`,
-                            color: resumeData.layout_settings.accent_color,
-                            ...(item.style ?? {}),
-                          }}
-                          onChange={(newHtml) =>
-                            handleContentChange(item.id, newHtml)
-                          }
-                        />
-                      </div>
-                    ))}
+                      );
+                    })}
                   </RGL>
                 </PageContainer>
               </div>
