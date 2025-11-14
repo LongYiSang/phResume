@@ -30,6 +30,7 @@ func RegisterRoutes(
 	wsHandler := NewWsHandler(redisClient, authService, logger)
 	authMiddleware := middleware.AuthMiddleware(authService)
 	assetHandler := NewAssetHandler(storageClient, logger, clamdAddr)
+	templateHandler := NewTemplateHandler(db)
 
 	v1 := router.Group("/v1")
 	{
@@ -59,6 +60,14 @@ func RegisterRoutes(
 		{
 			assetGroup.POST("/upload", assetHandler.UploadAsset)
 			assetGroup.GET("/view", assetHandler.GetAssetURL)
+		}
+
+		templatesGroup := v1.Group("/templates")
+		templatesGroup.Use(authMiddleware)
+		{
+			templatesGroup.GET("", templateHandler.ListTemplates)
+			templatesGroup.GET("/:id", templateHandler.GetTemplate)
+			templatesGroup.POST("", templateHandler.CreateTemplate)
 		}
 	}
 }

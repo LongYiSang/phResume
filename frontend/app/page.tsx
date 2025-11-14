@@ -16,6 +16,7 @@ import { StylePanel } from "@/components/StylePanel";
 import { TextItem } from "@/components/TextItem";
 import { DividerItem } from "@/components/DividerItem";
 import { ImageItem } from "@/components/ImageItem";
+import { TemplatesPanel } from "@/components/TemplatesPanel";
 import { useAuth } from "@/context/AuthContext";
 import type {
   LayoutSettings,
@@ -179,6 +180,7 @@ export default function Home() {
   const [taskStatus, setTaskStatus] = useState<TaskStatus>("idle");
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [isUploadingAsset, setIsUploadingAsset] = useState(false);
+  const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // 全局撤销/重做（不包含文本框内字符级编辑）
@@ -844,6 +846,17 @@ export default function Home() {
     setResumeData(deepCloneResumeData(nextState));
   }, []);
 
+  // 应用模板：完全替换主状态，并将之前状态入历史
+  const replaceResumeData = useCallback((nextData: ResumeData) => {
+    setResumeData((prev) => {
+      if (prev) {
+        setHistoryStack((hs) => [...hs, deepCloneResumeData(prev)]);
+        setRedoStack([]);
+      }
+      return deepCloneResumeData(nextData);
+    });
+  }, []);
+
   // 拖拽/缩放交互：开始时拍快照，结束时如有变动则把起始快照推入历史
   function simplifiedLayouts(data: ResumeData | null) {
     if (!data) return [];
@@ -1132,6 +1145,13 @@ export default function Home() {
         </button>
         <button
           type="button"
+          onClick={() => setIsTemplatesOpen(true)}
+          className="rounded-md border border-zinc-300 px-6 py-2 text-sm font-medium text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400 dark:border-zinc-600 dark:text-zinc-100 dark:hover:bg-zinc-800"
+        >
+          模板
+        </button>
+        <button
+          type="button"
           onClick={handleSave}
           disabled={isLoading || isFetchingResume}
           className="rounded-md bg-zinc-900 px-6 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
@@ -1165,6 +1185,14 @@ export default function Home() {
           {error}
         </div>
       )}
+
+      <TemplatesPanel
+        isOpen={isTemplatesOpen}
+        onClose={() => setIsTemplatesOpen(false)}
+        accessToken={accessToken}
+        currentResumeData={resumeData}
+        onApply={replaceResumeData}
+      />
     </div>
   );
 }
