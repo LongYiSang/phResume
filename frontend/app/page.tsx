@@ -162,6 +162,11 @@ function normalizeResumeContent(content: unknown): ResumeData | null {
   };
 }
 
+// 深拷贝工具：用于历史栈快照
+function deepCloneResumeData(data: ResumeData): ResumeData {
+  return JSON.parse(JSON.stringify(data)) as ResumeData;
+}
+
 export default function Home() {
   const router = useRouter();
   const { accessToken, isAuthenticated } = useAuth();
@@ -176,6 +181,46 @@ export default function Home() {
   const [isUploadingAsset, setIsUploadingAsset] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // 全局撤销/重做（不包含文本框内字符级编辑）
+  const [historyStack, setHistoryStack] = useState<ResumeData[]>([]);
+  const [redoStack, setRedoStack] = useState<ResumeData[]>([]);
+  // 便于在回调中访问最新状态的 ref
+  const resumeDataRef = useRef<ResumeData | null>(null);
+  const historyRef = useRef<ResumeData[]>([]);
+  const redoRef = useRef<ResumeData[]>([]);
+  // 交互起始快照（拖拽/缩放）
+  const interactionStartSnapshotRef = useRef<ResumeData | null>(null);
+  // 拖拽/缩放标记
+  const isDraggingRef = useRef(false);
+  const isResizingRef = useRef(false);
+
+  useEffect(() => {
+    resumeDataRef.current = resumeData;
+  }, [resumeData]);
+  useEffect(() => {
+    historyRef.current = historyStack;
+  }, [historyStack]);
+  useEffect(() => {
+    redoRef.current = redoStack;
+  }, [redoStack]);
+
+  // 统一的历史入栈包裹器：对变更前状态拍快照 -> 清空 redo -> 应用变更
+  const withHistory = useCallback(
+    (updater: (prev: ResumeData) => ResumeData) => {
+      setResumeData((prev) => {
+        if (!prev) {
+          return prev;
+        }
+        // 入历史快照
+        setHistoryStack((hs) => [...hs, deepCloneResumeData(prev)]);
+        // 变更发生时清空重做栈
+        setRedoStack([]);
+        // 返回新状态
+        return updater(prev);
+      });
+    },
+    [],
+  );
 
   const fetchDownloadLink = useCallback(
     async (resumeId: number) => {
@@ -345,6 +390,12 @@ export default function Home() {
       setError("简历内容尚未加载完成");
       return;
     }
+    // 保存前校验重叠
+    const currentOverlap = calcOverlapIds(resumeData.items);
+    if (currentOverlap.size > 0) {
+      setError("存在重叠模块，无法保存，请调整位置后重试。");
+      return;
+    }
 
     setIsLoading(true);
 
@@ -439,6 +490,9 @@ export default function Home() {
           return prev;
         }
 
+        const dragging = isDraggingRef.current;
+        const resizing = isResizingRef.current;
+
         const updatedItems = prev.items.map((item) => {
           const nextLayout = newLayout.find((layoutItem) => layoutItem.i === item.id);
           if (!nextLayout) {
@@ -446,6 +500,21 @@ export default function Home() {
           }
 
           const { x, y, w, h } = nextLayout;
+          if (dragging) {
+            // 拖动过程中仅更新坐标，保持宽高不变，满足“维持原始高度/尺寸”的要求
+            return {
+              ...item,
+              layout: {
+                ...item.layout,
+                x,
+                y,
+                w: item.layout?.w ?? w,
+                h: item.layout?.h ?? h,
+              },
+            };
+          }
+
+        // 缩放时或其他情况下，完整同步（w/h 仅在缩放时会变化）
           return {
             ...item,
             layout: {
@@ -466,14 +535,9 @@ export default function Home() {
 
   const handleSettingsChange = useCallback(
     (newSettings: LayoutSettings) => {
-      setResumeData((prev) => {
-        if (!prev) {
-          return prev;
-        }
-        return { ...prev, layout_settings: newSettings };
-      });
+      withHistory((prev) => ({ ...prev, layout_settings: newSettings }));
     },
-    [],
+    [withHistory],
   );
 
   const handleContentChange = useCallback((itemId: string, newHtml: string) => {
@@ -525,59 +589,111 @@ export default function Home() {
 
   const handleItemFontSizeChange = useCallback(
     (newSizePt: number) => {
-      setResumeData((prev) => {
-        if (!prev || !selectedItemId) {
-          return prev;
-        }
-
-        const updatedItems = prev.items.map((item) => {
-          if (item.id !== selectedItemId) {
-            return item;
-          }
-
-          const currentStyle = item.style ?? {};
-          return {
-            ...item,
-            style: {
-              ...currentStyle,
-              fontSize: `${newSizePt}pt`,
-            },
-          };
-        });
-
+      if (!selectedItemId) return;
+      withHistory((prev) => {
+        const updatedItems = prev.items.map((item) =>
+          item.id !== selectedItemId
+            ? item
+            : {
+                ...item,
+                style: {
+                  ...(item.style ?? {}),
+                  fontSize: `${newSizePt}pt`,
+                },
+              },
+        );
         return { ...prev, items: updatedItems };
       });
     },
-    [selectedItemId],
+    [selectedItemId, withHistory],
   );
 
   const handleItemColorChange = useCallback(
     (newColor: string) => {
-      setResumeData((prev) => {
-        if (!prev || !selectedItemId) {
-          return prev;
-        }
-
-        const updatedItems = prev.items.map((item) => {
-          if (item.id !== selectedItemId) {
-            return item;
-          }
-
-          const currentStyle = item.style ?? {};
-          return {
-            ...item,
-            style: {
-              ...currentStyle,
-              color: newColor,
-            },
-          };
-        });
-
+      if (!selectedItemId) return;
+      withHistory((prev) => {
+        const updatedItems = prev.items.map((item) =>
+          item.id !== selectedItemId
+            ? item
+            : {
+                ...item,
+                style: {
+                  ...(item.style ?? {}),
+                  color: newColor,
+                },
+              },
+        );
         return { ...prev, items: updatedItems };
       });
     },
-    [selectedItemId],
+    [selectedItemId, withHistory],
   );
+
+  // 计算居中插入位置（x 水平居中，y 取当前占用高度的中位数）
+  function computeCenteredPosition(prev: ResumeData, w: number, h: number) {
+    const cols = prev.layout_settings?.columns ?? GRID_COLS;
+    const x = Math.max(0, Math.min(cols - w, Math.floor((cols - w) / 2)));
+    const usedHeight = prev.items.reduce((max, it) => {
+      const ly = it.layout;
+      const bottom = (ly?.y ?? 0) + (ly?.h ?? 0);
+      return Math.max(max, bottom);
+    }, 0);
+    const y = Math.max(0, Math.floor(usedHeight / 2) - Math.floor(h / 2));
+    return { x, y };
+  }
+
+  const handleAddText = useCallback(() => {
+    if (!resumeData) {
+      setError("简历内容尚未加载完成");
+      return;
+    }
+    const defaultW = 12;
+    const defaultH = 6;
+    withHistory((prev) => {
+      const pos = computeCenteredPosition(prev, defaultW, defaultH);
+      const newText: ResumeItem = {
+        id: uuidv4(),
+        type: "text",
+        content: "",
+        layout: { x: pos.x, y: pos.y, w: defaultW, h: defaultH },
+        style: {
+          fontSize: `${prev.layout_settings?.font_size_pt ?? DEFAULT_LAYOUT_SETTINGS.font_size_pt}pt`,
+          color: prev.layout_settings?.accent_color ?? DEFAULT_LAYOUT_SETTINGS.accent_color,
+        },
+      };
+      return { ...prev, items: [...prev.items, newText] };
+    });
+  }, [resumeData, withHistory]);
+
+  // 计算重叠模块集合：任意两矩形相交则判定重叠
+  function calcOverlapIds(items: ResumeItem[]): Set<string> {
+    const ids = new Set<string>();
+    const rects = items.map((it) => {
+      const x = it.layout?.x ?? 0;
+      const y = it.layout?.y ?? 0;
+      const w = it.layout?.w ?? 0;
+      const h = it.layout?.h ?? 0;
+      return { id: it.id, left: x, right: x + w, top: y, bottom: y + h };
+    });
+    for (let i = 0; i < rects.length; i++) {
+      for (let j = i + 1; j < rects.length; j++) {
+        const a = rects[i];
+        const b = rects[j];
+        const sepH = a.right <= b.left || b.right <= a.left;
+        const sepV = a.bottom <= b.top || b.bottom <= a.top;
+        if (!(sepH || sepV)) {
+          ids.add(a.id);
+          ids.add(b.id);
+        }
+      }
+    }
+    return ids;
+  }
+
+  const overlapIds = useMemo(() => {
+    if (!resumeData) return new Set<string>();
+    return calcOverlapIds(resumeData.items);
+  }, [resumeData]);
 
   const handleAddDivider = useCallback(() => {
     if (!resumeData) {
@@ -589,24 +705,20 @@ export default function Home() {
       resumeData.layout_settings?.accent_color ??
       DEFAULT_LAYOUT_SETTINGS.accent_color;
 
-    const newDivider: ResumeItem = {
-      id: uuidv4(),
-      type: "divider",
-      content: "",
-      layout: { x: 0, y: 0, w: 24, h: 2 },
-      style: {
-        borderTop: `2px solid ${accentColor}`,
-        margin: "8px 0",
-      },
-    };
-
-    setResumeData((prev) => {
-      if (!prev) {
-        return prev;
-      }
+    withHistory((prev) => {
+      const newDivider: ResumeItem = {
+        id: uuidv4(),
+        type: "divider",
+        content: "",
+        layout: { x: 0, y: 0, w: 24, h: 2 },
+        style: {
+          borderTop: `2px solid ${accentColor}`,
+          margin: "8px 0",
+        },
+      };
       return { ...prev, items: [...prev.items, newDivider] };
     });
-  }, [resumeData]);
+  }, [resumeData, withHistory]);
 
   const handleAddImageClick = useCallback(() => {
     if (!resumeData) {
@@ -664,18 +776,24 @@ export default function Home() {
             return prev;
           }
 
-          const newImage: ResumeItem = {
-            id: uuidv4(),
-            type: "image",
-            content: objectKey,
-            layout: { x: 0, y: 0, w: 6, h: 10 },
-            style: {
-              borderRadius: "0.375rem",
-              objectFit: "cover",
-            },
-          };
-
-          return { ...prev, items: [...prev.items, newImage] };
+          // 使用 withHistory 以记录历史
+          const next = (() => {
+            const newImage: ResumeItem = {
+              id: uuidv4(),
+              type: "image",
+              content: objectKey,
+              layout: { x: 0, y: 0, w: 6, h: 10 },
+              style: {
+                borderRadius: "0.375rem",
+                objectFit: "cover",
+              },
+            };
+            return { ...prev, items: [...prev.items, newImage] };
+          })();
+          // 将 prev 入历史并清空 redo
+          setHistoryStack((hs) => [...hs, deepCloneResumeData(prev)]);
+          setRedoStack([]);
+          return next;
         });
       } catch (err) {
         console.error("图片上传失败", err);
@@ -690,6 +808,92 @@ export default function Home() {
 
   const handleSelectItem = useCallback((itemId: string) => {
     setSelectedItemId(itemId);
+  }, []);
+
+  const handleDeleteItem = useCallback(
+    (itemId: string) => {
+      const ok = window.confirm("确认要删除该模块吗？此操作不可撤销。");
+      if (!ok) return;
+      withHistory((prev) => {
+        const nextItems = prev.items.filter((i) => i.id !== itemId);
+        return { ...prev, items: nextItems };
+      });
+      setSelectedItemId((curr) => (curr === itemId ? null : curr));
+    },
+    [withHistory],
+  );
+
+  // 撤销/重做
+  const handleUndo = useCallback(() => {
+    const curr = resumeDataRef.current;
+    const hs = historyRef.current;
+    if (!curr || hs.length === 0) return;
+    const prevState = hs[hs.length - 1];
+    setHistoryStack(hs.slice(0, -1));
+    setRedoStack((rs) => [...rs, deepCloneResumeData(curr)]);
+    setResumeData(deepCloneResumeData(prevState));
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    const curr = resumeDataRef.current;
+    const rs = redoRef.current;
+    if (!curr || rs.length === 0) return;
+    const nextState = rs[rs.length - 1];
+    setRedoStack(rs.slice(0, -1));
+    setHistoryStack((hs) => [...hs, deepCloneResumeData(curr)]);
+    setResumeData(deepCloneResumeData(nextState));
+  }, []);
+
+  // 拖拽/缩放交互：开始时拍快照，结束时如有变动则把起始快照推入历史
+  function simplifiedLayouts(data: ResumeData | null) {
+    if (!data) return [];
+    return data.items
+      .map((it) => ({
+        id: it.id,
+        x: it.layout?.x ?? 0,
+        y: it.layout?.y ?? 0,
+        w: it.layout?.w ?? 0,
+        h: it.layout?.h ?? 0,
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+  }
+  function isLayoutChanged(a: ResumeData | null, b: ResumeData | null) {
+    const sa = simplifiedLayouts(a);
+    const sb = simplifiedLayouts(b);
+    return JSON.stringify(sa) !== JSON.stringify(sb);
+  }
+
+  const handleDragStart = useCallback(() => {
+    isDraggingRef.current = true;
+    interactionStartSnapshotRef.current = resumeDataRef.current
+      ? deepCloneResumeData(resumeDataRef.current)
+      : null;
+  }, []);
+  const handleDragStop = useCallback(() => {
+    isDraggingRef.current = false;
+    const start = interactionStartSnapshotRef.current;
+    const curr = resumeDataRef.current;
+    interactionStartSnapshotRef.current = null;
+    if (start && curr && isLayoutChanged(start, curr)) {
+      setHistoryStack((hs) => [...hs, deepCloneResumeData(start)]);
+      setRedoStack([]);
+    }
+  }, []);
+  const handleResizeStart = useCallback(() => {
+    isResizingRef.current = true;
+    interactionStartSnapshotRef.current = resumeDataRef.current
+      ? deepCloneResumeData(resumeDataRef.current)
+      : null;
+  }, []);
+  const handleResizeStop = useCallback(() => {
+    isResizingRef.current = false;
+    const start = interactionStartSnapshotRef.current;
+    const curr = resumeDataRef.current;
+    interactionStartSnapshotRef.current = null;
+    if (start && curr && isLayoutChanged(start, curr)) {
+      setHistoryStack((hs) => [...hs, deepCloneResumeData(start)]);
+      setRedoStack([]);
+    }
   }, []);
 
   return (
@@ -740,10 +944,18 @@ export default function Home() {
               元素库
             </h2>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-              添加新的分割线或图片模块，随时调整布局。
+              添加新的文字框、分割线或图片模块，随时调整布局。
             </p>
 
             <div className="mt-4 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={handleAddText}
+                disabled={!resumeData}
+                className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800"
+              >
+                添加文字框
+              </button>
               <button
                 type="button"
                 onClick={handleAddDivider}
@@ -789,15 +1001,22 @@ export default function Home() {
                     layout={layout}
                     cols={currentColumns}
                     rowHeight={currentRowHeight}
+                    compactType={null}
+                    preventCollision
                     draggableHandle=".rgl-drag-handle"
                     draggableCancel=".text-item-editor"
                     width={CANVAS_WIDTH}
                     margin={[0, 0]}
                     containerPadding={[0, 0]}
                     onLayoutChange={handleLayoutChange}
+                    onDragStart={handleDragStart}
+                    onDragStop={handleDragStop}
+                    onResizeStart={handleResizeStart}
+                    onResizeStop={handleResizeStop}
                   >
                     {resumeData.items.map((item) => {
                       const isSelected = selectedItemId === item.id;
+                      const isOverlapped = overlapIds.has(item.id);
                       const baseStyle = {
                         fontSize: `${resumeData.layout_settings.font_size_pt}pt`,
                         color: resumeData.layout_settings.accent_color,
@@ -821,16 +1040,35 @@ export default function Home() {
                         <div
                           key={item.id}
                           className={`relative h-full w-full rounded-md border border-dashed bg-white/90 text-sm text-zinc-900 shadow-sm ${
-                            isSelected ? "border-blue-500" : "border-zinc-200"
+                            isOverlapped
+                              ? "border-red-500 ring-2 ring-red-400"
+                              : isSelected
+                              ? "border-blue-500"
+                              : "border-zinc-200"
                           }`}
                           onMouseDownCapture={() => handleSelectItem(item.id)}
                           onFocus={() => handleSelectItem(item.id)}
                           tabIndex={0}
                           style={{ padding: "10px" }}
                         >
+                          {isOverlapped && (
+                            <div className="absolute left-2 top-2 rounded bg-red-500/90 px-1.5 py-0.5 text-[10px] text-white shadow">
+                              重叠
+                            </div>
+                          )}
                           <div className="rgl-drag-handle absolute right-2 top-2 cursor-move rounded-full border border-zinc-300 bg-white/80 px-2 py-0.5 text-xs text-zinc-500 shadow-sm hover:bg-white">
                             拖动
                           </div>
+                          <button
+                            type="button"
+                            className="absolute right-14 top-2 rounded-full border border-zinc-300 bg-white/80 px-2 py-0.5 text-xs text-red-500 shadow-sm hover:bg-white"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteItem(item.id);
+                            }}
+                          >
+                            删除
+                          </button>
 
                           {item.type === "text" && (
                             <TextItem
@@ -876,6 +1114,22 @@ export default function Home() {
       </div>
 
       <div className="flex flex-wrap gap-4">
+        <button
+          type="button"
+          onClick={handleUndo}
+          disabled={historyStack.length === 0}
+          className="rounded-md border border-zinc-300 px-6 py-2 text-sm font-medium text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400 dark:border-zinc-600 dark:text-zinc-100 dark:hover:bg-zinc-800"
+        >
+          撤销
+        </button>
+        <button
+          type="button"
+          onClick={handleRedo}
+          disabled={redoStack.length === 0}
+          className="rounded-md border border-zinc-300 px-6 py-2 text-sm font-medium text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400 dark:border-zinc-600 dark:text-zinc-100 dark:hover:bg-zinc-800"
+        >
+          重做
+        </button>
         <button
           type="button"
           onClick={handleSave}
