@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { useAuthFetch } from "@/hooks/useAuthFetch";
 
 type ImageItemProps = {
   objectKey?: string;
@@ -14,6 +15,7 @@ type ImageItemProps = {
 
 export function ImageItem({ objectKey, style, preSignedURL }: ImageItemProps) {
   const { accessToken } = useAuth();
+  const authFetch = useAuthFetch();
   const [imageURL, setImageURL] = useState<string | null>(
     preSignedURL ?? null,
   );
@@ -35,13 +37,8 @@ export function ImageItem({ objectKey, style, preSignedURL }: ImageItemProps) {
     const fetchImageURL = async () => {
       setIsLoading(true);
       try {
-        const response = await fetch(
+        const response = await authFetch(
           `/api/v1/assets/view?key=${encodeURIComponent(objectKey)}`,
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          },
         );
 
         if (!response.ok) {
@@ -69,7 +66,7 @@ export function ImageItem({ objectKey, style, preSignedURL }: ImageItemProps) {
     return () => {
       isMounted = false;
     };
-  }, [objectKey, accessToken, preSignedURL]);
+  }, [objectKey, accessToken, preSignedURL, authFetch]);
 
   const combinedStyle = useMemo<CSSProperties>(
     () => ({

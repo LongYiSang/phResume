@@ -1,3 +1,28 @@
+# 项目速览
+
+phResume 是一个“所见即所得简历编辑与异步 PDF 生成”系统，后端使用 Go，前端基于 Next.js 16。用户登录后，可在 24 列网格画布上拖拽模块、上传头像等资产、保存模板，并触发后台生成 PDF；生成完成后通过 WebSocket + Redis Pub/Sub 实时通知并提供 MinIO 预签名链接。
+
+## 核心组件
+- `backend/`：Go 单模块。
+  - `cmd/api` 启动 Gin API，负责认证、简历 CRUD、模板、资产上传（含 ClamAV 扫描）、任务入队和 Prometheus 指标。
+  - `cmd/worker` 运行 Asynq Server。`internal/worker/pdf_handler.go` 使用 go-rod 访问前端 `/print/:id?internal_token=` 页面，注入打印 CSS，导出 PDF 到 MinIO，并通过 Redis 通知前端。
+  - `internal/` 其余目录：`api`（Handlers/Middleware/WebSocket）、`auth`（JWT RS256）、`config`（Viper 读取 env）、`database`（GORM 模型 JSONB 简历/模板）、`storage`（MinIO 上传 + 预签名）、`tasks`（Asynq payload）、`metrics`（Gin/Asynq Prometheus 指标）。
+- `frontend/`：Next.js App Router。
+  - `app/page.tsx` 是主编辑器，结合 `react-grid-layout`、撤销/重做历史栈、模板面板、资产上传、WebSocket 监听 Asynq 完成；`/login` 与 `/register` 页面处理认证；`/print/[id]` 用于 worker 渲染。
+- `deploy/`：Nginx、Loki、Promtail、Prometheus、Grafana 的配置文件，用于 Phase4 可观测性与日志。
+- `docker-compose.yml`：一次性启动 Postgres、Redis、MinIO、API、Worker、前端、Nginx、ClamAV 及 Loki/Promtail/Prometheus/Grafana。
+
+## 运行与测试
+- 后端：`cd backend && go run ./cmd/api`、`go run ./cmd/worker` 或 `go build ./cmd/...`。开发镜像内通过 `air` 热重载。Go 依赖若拉取缓慢可使用 `GOPROXY=https://goproxy.cn,direct`。
+- 前端：`cd frontend && npm install` 后，`npm run dev` 本地开发；`npm run build && npm run start` 模拟生产。环境变量通过 `.env.local`/容器注入。
+- 全栈：`docker-compose up --build` 启动所有服务（包括可观测性与 ClamAV）。
+- 测试：后端 `go test ./...`，前端 `npm run lint`、`npm run test`（Jest/RTL 测试位于 `frontend/__tests__/` 或组件旁）。
+
+## 配置与安全
+- `.env.example`（前后端）需同步维护。JWT 私钥、公钥、数据库口令等禁止入库，统一通过环境变量/CI secrets 注入。
+- Worker 镜像必须保留 Chromium 以支持 go-rod。上传文件由 API 调用 ClamAV 扫描并上传至 MinIO 私有桶，下载统一使用预签名 URL；`INTERNAL_API_SECRET` 用于 worker 调用 `/print/:id`。
+- Prometheus `/metrics` 分别暴露在 API 8080 路径和 worker 9100 端口；Loki/Promtail/Grafana 配置位于 `deploy/`。
+
 # Repository Guidelines
 
 ## Project Structure & Module Organization
@@ -8,7 +33,7 @@ Backend: `cd backend && go run ./cmd/api` starts the API, and `go run ./cmd/work
 When Go module downloads hit timeouts, rerun commands with `GOPROXY=https://goproxy.cn,direct` to leverage the mirror.
 
 ## Coding Style & Naming Conventions
-Format Go code with `gofmt` (tabs, camelCase identifiers) and organize imports with `goimports`. Keep package names short and lower\_snake\_case. For React/Next.js, lean on Prettier defaults (2-space indent, single quotes) and run `npm run lint` before pushing; name components in PascalCase and files in kebab-case when route-related. Update `.env.example` files whenever variables change.
+Format Go code with `gofmt` (tabs, camelCase identifiers) and organize imports with `goimports`. Keep package names short and lower_snake_case. For React/Next.js, lean on Prettier defaults (2-space indent, single quotes) and run `npm run lint` before pushing; name components in PascalCase and files in kebab-case when route-related. Update `.env.example` files whenever variables change.
 
 ## Testing Guidelines
 Write Go tests alongside code as `*_test.go` files and run `go test ./...` before submitting. Add table-driven cases for handlers, tasks, and stores; spin up temporary Postgres containers via Docker for integration coverage. For the frontend, place Jest/RTL specs under `frontend/__tests__/` or colocate with components using `.test.tsx` files, and execute `npm run test`. Failing CI blocks merges.

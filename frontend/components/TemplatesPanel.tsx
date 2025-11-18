@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { ResumeData } from "@/types/resume";
+import { useAuthFetch } from "@/hooks/useAuthFetch";
 
 type TemplateListItem = {
   id: number;
@@ -28,6 +29,7 @@ export function TemplatesPanel({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveTitle, setSaveTitle] = useState("");
+  const authFetch = useAuthFetch();
   const canInteract = useMemo(() => Boolean(accessToken), [accessToken]);
 
   useEffect(() => {
@@ -41,9 +43,7 @@ export function TemplatesPanel({
       setIsLoading(true);
       setError(null);
       try {
-        const resp = await fetch("/api/v1/templates", {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
+        const resp = await authFetch("/api/v1/templates");
         if (!resp.ok) {
           throw new Error("list templates failed");
         }
@@ -64,7 +64,7 @@ export function TemplatesPanel({
     return () => {
       isMounted = false;
     };
-  }, [isOpen, accessToken]);
+  }, [isOpen, accessToken, authFetch]);
 
   const handleApply = async (id: number) => {
     if (!accessToken) {
@@ -73,9 +73,7 @@ export function TemplatesPanel({
     }
     setError(null);
     try {
-      const resp = await fetch(`/api/v1/templates/${id}`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      const resp = await authFetch(`/api/v1/templates/${id}`);
       if (!resp.ok) {
         throw new Error("get template failed");
       }
@@ -112,11 +110,10 @@ export function TemplatesPanel({
     }
     setError(null);
     try {
-      const resp = await fetch("/api/v1/templates", {
+      const resp = await authFetch("/api/v1/templates", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           title,
@@ -129,9 +126,7 @@ export function TemplatesPanel({
       }
       // 保存成功，刷新列表
       setSaveTitle("");
-      const reload = await fetch("/api/v1/templates", {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      const reload = await authFetch("/api/v1/templates");
       if (reload.ok) {
         const data = (await reload.json()) as TemplateListItem[];
         setTemplates(Array.isArray(data) ? data : []);
@@ -292,4 +287,3 @@ function normalizeResumeContent(content: unknown): ResumeData | null {
     return null;
   }
 }
-

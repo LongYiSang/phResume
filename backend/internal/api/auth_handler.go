@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -244,7 +245,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	}
 
 	// 清除 Cookie。
-	c.SetCookie(refreshTokenCookieName, "", -1, "/", "", true, true)
+	c.SetCookie(refreshTokenCookieName, "", -1, "/", "", h.isHTTPSRequest(c), true)
 	c.Status(http.StatusOK)
 }
 
@@ -265,7 +266,15 @@ func (h *AuthHandler) setRefreshCookie(c *gin.Context, refreshToken string) {
 	if maxAge <= 0 {
 		maxAge = int(time.Hour.Seconds())
 	}
-	c.SetCookie(refreshTokenCookieName, refreshToken, maxAge, "/", "", true, true)
+	c.SetCookie(
+		refreshTokenCookieName,
+		refreshToken,
+		maxAge,
+		"/",
+		"",
+		h.isHTTPSRequest(c),
+		true,
+	)
 }
 
 func (h *AuthHandler) revokeRefreshToken(ctx context.Context, key string, expiresAt *jwt.NumericDate) error {
@@ -289,4 +298,14 @@ func (h *AuthHandler) loggerFromContext(c *gin.Context) *slog.Logger {
 		return h.logger
 	}
 	return slog.Default()
+}
+
+func (h *AuthHandler) isHTTPSRequest(c *gin.Context) bool {
+	if c.Request == nil {
+		return false
+	}
+	if c.Request.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(c.Request.Header.Get("X-Forwarded-Proto"), "https")
 }

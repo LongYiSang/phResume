@@ -29,6 +29,7 @@ export default function LoginPage() {
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include",
         body: JSON.stringify({
           username: username.trim(),
           password: password.trim(),
@@ -47,6 +48,7 @@ export default function LoginPage() {
       setAccessToken(accessToken);
       router.push("/");
     } catch (err) {
+      console.error("登录失败", err);
       setError("登录失败，请稍后再试");
     } finally {
       setIsSubmitting(false);

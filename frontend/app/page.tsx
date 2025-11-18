@@ -18,6 +18,7 @@ import { DividerItem } from "@/components/DividerItem";
 import { ImageItem } from "@/components/ImageItem";
 import { TemplatesPanel } from "@/components/TemplatesPanel";
 import { useAuth } from "@/context/AuthContext";
+import { useAuthFetch } from "@/hooks/useAuthFetch";
 import type {
   LayoutSettings,
   ResumeData,
@@ -170,7 +171,8 @@ function deepCloneResumeData(data: ResumeData): ResumeData {
 
 export default function Home() {
   const router = useRouter();
-  const { accessToken, isAuthenticated } = useAuth();
+  const { accessToken, isAuthenticated, isCheckingAuth } = useAuth();
+  const authFetch = useAuthFetch();
   const [title, setTitle] = useState("");
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
   const [savedResumeId, setSavedResumeId] = useState<number | null>(null);
@@ -226,7 +228,7 @@ export default function Home() {
 
   const fetchDownloadLink = useCallback(
     async (resumeId: number) => {
-      if (!accessToken) {
+      if (!isAuthenticated) {
         setError("请先登录");
         setTaskStatus("idle");
         return;
@@ -235,13 +237,8 @@ export default function Home() {
       setError(null);
 
       try {
-        const response = await fetch(
+        const response = await authFetch(
           `/api/v1/resume/${resumeId}/download-link`,
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          },
         );
 
         if (!response.ok) {
@@ -261,14 +258,14 @@ export default function Home() {
         setTaskStatus("idle");
       }
     },
-    [accessToken],
+    [isAuthenticated, authFetch],
   );
 
   useEffect(() => {
-    if (isAuthenticated === false) {
+    if (!isCheckingAuth && isAuthenticated === false) {
       router.push("/login");
     }
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, isCheckingAuth, router]);
 
   const resolveWebSocketURL = useCallback(() => {
     if (typeof window === "undefined") {
@@ -334,7 +331,7 @@ export default function Home() {
   }, [isAuthenticated, accessToken, fetchDownloadLink, resolveWebSocketURL]);
 
   const fetchLatestResume = useCallback(async () => {
-    if (!accessToken) {
+    if (!isAuthenticated) {
       return;
     }
 
@@ -342,11 +339,7 @@ export default function Home() {
     setError(null);
 
     try {
-      const response = await fetch("/api/v1/resume/latest", {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
+      const response = await authFetch("/api/v1/resume/latest");
 
       if (!response.ok) {
         throw new Error("failed to fetch latest resume");
@@ -366,13 +359,13 @@ export default function Home() {
     } finally {
       setIsFetchingResume(false);
     }
-  }, [accessToken]);
+  }, [authFetch, isAuthenticated]);
 
   useEffect(() => {
-    if (isAuthenticated && accessToken) {
+    if (!isCheckingAuth && isAuthenticated) {
       fetchLatestResume();
     }
-  }, [isAuthenticated, accessToken, fetchLatestResume]);
+  }, [isAuthenticated, isCheckingAuth, fetchLatestResume]);
 
   const handleSave = async () => {
     setError(null);
@@ -383,7 +376,7 @@ export default function Home() {
       return;
     }
 
-    if (!accessToken) {
+    if (!isAuthenticated) {
       setError("请先登录");
       return;
     }
@@ -402,11 +395,10 @@ export default function Home() {
     setIsLoading(true);
 
     try {
-      const response = await fetch("/api/v1/resume", {
+      const response = await authFetch("/api/v1/resume", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({ title: trimmedTitle, content: resumeData }),
       });
@@ -433,7 +425,7 @@ export default function Home() {
       return;
     }
 
-    if (!accessToken) {
+    if (!isAuthenticated) {
       setError("请先登录");
       return;
     }
@@ -442,11 +434,9 @@ export default function Home() {
     setTaskStatus("pending");
 
     try {
-      const response = await fetch(`/api/v1/resume/${savedResumeId}/download`, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
+      const response = await authFetch(
+        `/api/v1/resume/${savedResumeId}/download`,
+      );
 
       if (!response.ok) {
         throw new Error("下载失败");
@@ -493,7 +483,6 @@ export default function Home() {
         }
 
         const dragging = isDraggingRef.current;
-        const resizing = isResizingRef.current;
 
         const updatedItems = prev.items.map((item) => {
           const nextLayout = newLayout.find((layoutItem) => layoutItem.i === item.id);
@@ -727,12 +716,12 @@ export default function Home() {
       setError("简历内容尚未加载完成");
       return;
     }
-    if (!accessToken) {
+    if (!isAuthenticated) {
       setError("请先登录");
       return;
     }
     fileInputRef.current?.click();
-  }, [resumeData, accessToken]);
+  }, [resumeData, isAuthenticated]);
 
   const handleImageUpload = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
@@ -741,7 +730,7 @@ export default function Home() {
         return;
       }
 
-      if (!accessToken) {
+      if (!isAuthenticated) {
         setError("请先登录");
         event.target.value = "";
         return;
@@ -754,11 +743,8 @@ export default function Home() {
       formData.append("file", file);
 
       try {
-        const response = await fetch("/api/v1/assets/upload", {
+        const response = await authFetch("/api/v1/assets/upload", {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
           body: formData,
         });
 
@@ -805,7 +791,7 @@ export default function Home() {
         event.target.value = "";
       }
     },
-    [accessToken],
+    [authFetch, isAuthenticated],
   );
 
   const handleSelectItem = useCallback((itemId: string) => {
@@ -858,7 +844,7 @@ export default function Home() {
   }, []);
 
   // 拖拽/缩放交互：开始时拍快照，结束时如有变动则把起始快照推入历史
-  function simplifiedLayouts(data: ResumeData | null) {
+  const simplifiedLayouts = useCallback((data: ResumeData | null) => {
     if (!data) return [];
     return data.items
       .map((it) => ({
@@ -869,12 +855,15 @@ export default function Home() {
         h: it.layout?.h ?? 0,
       }))
       .sort((a, b) => a.id.localeCompare(b.id));
-  }
-  function isLayoutChanged(a: ResumeData | null, b: ResumeData | null) {
-    const sa = simplifiedLayouts(a);
-    const sb = simplifiedLayouts(b);
-    return JSON.stringify(sa) !== JSON.stringify(sb);
-  }
+  }, []);
+  const isLayoutChanged = useCallback(
+    (a: ResumeData | null, b: ResumeData | null) => {
+      const sa = simplifiedLayouts(a);
+      const sb = simplifiedLayouts(b);
+      return JSON.stringify(sa) !== JSON.stringify(sb);
+    },
+    [simplifiedLayouts],
+  );
 
   const handleDragStart = useCallback(() => {
     isDraggingRef.current = true;
@@ -891,7 +880,7 @@ export default function Home() {
       setHistoryStack((hs) => [...hs, deepCloneResumeData(start)]);
       setRedoStack([]);
     }
-  }, []);
+  }, [isLayoutChanged]);
   const handleResizeStart = useCallback(() => {
     isResizingRef.current = true;
     interactionStartSnapshotRef.current = resumeDataRef.current
@@ -907,7 +896,7 @@ export default function Home() {
       setHistoryStack((hs) => [...hs, deepCloneResumeData(start)]);
       setRedoStack([]);
     }
-  }, []);
+  }, [isLayoutChanged]);
 
   return (
     <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-6 py-12">
