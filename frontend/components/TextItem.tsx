@@ -5,6 +5,7 @@ import {
   useRef,
   useCallback,
   useEffect,
+  useState,
   type CSSProperties,
   type MutableRefObject,
 } from "react";
@@ -14,8 +15,16 @@ import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
+import { MarkdownShortcutPlugin } from "@lexical/react/LexicalMarkdownShortcutPlugin";
+import { ListPlugin } from "@lexical/react/LexicalListPlugin";
 import LexicalErrorBoundary from "@lexical/react/LexicalErrorBoundary";
 import { $generateHtmlFromNodes, $generateNodesFromDOM } from "@lexical/html";
+import { HeadingNode, QuoteNode } from "@lexical/rich-text";
+import { ListNode, ListItemNode } from "@lexical/list";
+import { TRANSFORMERS } from "@lexical/markdown";
+import { mergeRegister } from "@lexical/utils";
+import { CodeNode } from "@lexical/code";
+import { LinkNode } from "@lexical/link";
 import {
   $createParagraphNode,
   $getRoot,
@@ -24,8 +33,11 @@ import {
   type EditorState,
   type LexicalEditor,
   type LexicalNode,
+  BLUR_COMMAND,
+  COMMAND_PRIORITY_LOW,
+  FOCUS_COMMAND,
 } from "lexical";
-import { FORMAT_TEXT_COMMAND } from "lexical";
+import { useActiveEditor } from "@/context/ActiveEditorContext";
 
 const DEFAULT_HTML = "<p></p>";
 
@@ -87,6 +99,43 @@ function ExternalHtmlSyncPlugin({
   return null;
 }
 
+function FocusTrackerPlugin() {
+  const [editor] = useLexicalComposerContext();
+  const { setActiveEditor } = useActiveEditor();
+
+  useEffect(() => {
+    const unregister = mergeRegister(
+      editor.registerCommand(
+        FOCUS_COMMAND,
+        () => {
+          setActiveEditor(editor);
+          return false;
+        },
+        COMMAND_PRIORITY_LOW,
+      ),
+      editor.registerCommand(
+        BLUR_COMMAND,
+        (event) => {
+          const nextTarget = event?.relatedTarget as HTMLElement | null;
+          if (nextTarget?.closest?.("[data-top-toolbar='true']")) {
+            editor.focus();
+            return false;
+          }
+          setActiveEditor((current) => (current === editor ? null : current));
+          return false;
+        },
+        COMMAND_PRIORITY_LOW,
+      ),
+    );
+    return () => {
+      unregister();
+      setActiveEditor((current) => (current === editor ? null : current));
+    };
+  }, [editor, setActiveEditor]);
+
+  return null;
+}
+
 export function TextItem({
   html,
   style,
@@ -94,13 +143,7 @@ export function TextItem({
   readOnly = false,
 }: TextItemProps) {
   const baseStyle: CSSProperties = {
-    width: "100%",
-    minHeight: "100%",
-    outline: "none",
-    border: "none",
-    background: "transparent",
     cursor: readOnly ? "default" : "text",
-    whiteSpace: "pre-wrap",
   };
 
   if (readOnly || !onChange) {
@@ -116,10 +159,20 @@ export function TextItem({
   const initialHtmlRef = useRef(html);
   const lastSyncedHtmlRef = useRef(html);
 
+  const [isFocused, setIsFocused] = useState(false);
+
   const initialConfig = useMemo(
     () => ({
       namespace: "text-item-editor",
       editable: true,
+      nodes: [
+        HeadingNode,
+        QuoteNode,
+        ListNode,
+        ListItemNode,
+        CodeNode,
+        LinkNode,
+      ],
       theme: {},
       onError(error: Error) {
         console.error("Lexical error:", error);
@@ -151,11 +204,17 @@ export function TextItem({
 
   return (
     <LexicalComposer initialConfig={initialConfig}>
-      <div className="h-full w-full">
+      <div
+        className={`h-full w-full rounded-lg bg-white/80 p-3 transition-all ${
+          isFocused ? "ring-1 ring-blue-500" : "ring-1 ring-transparent"
+        }`}
+      >
         <RichTextPlugin
           contentEditable={
             <ContentEditable
               className="text-item-editor"
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
               style={{ ...baseStyle, ...style }}
             />
           }
@@ -163,7 +222,10 @@ export function TextItem({
           ErrorBoundary={LexicalErrorBoundary}
         />
         <HistoryPlugin />
+        <ListPlugin />
+        <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
         <OnChangePlugin onChange={handleEditorChange} />
+        <FocusTrackerPlugin />
         <ExternalHtmlSyncPlugin
           html={html}
           lastSyncedHtmlRef={lastSyncedHtmlRef}

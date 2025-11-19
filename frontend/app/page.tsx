@@ -18,7 +18,9 @@ import { DividerItem } from "@/components/DividerItem";
 import { ImageItem } from "@/components/ImageItem";
 import { TemplatesPanel } from "@/components/TemplatesPanel";
 import { MyResumesPanel } from "@/components/MyResumesPanel";
+import { TopToolbar } from "@/components/editor/TopToolbar";
 import { useAuth } from "@/context/AuthContext";
+import { ActiveEditorProvider } from "@/context/ActiveEditorContext";
 import { useAuthFetch } from "@/hooks/useAuthFetch";
 import { Button, Card } from "@heroui/react";
 import {
@@ -859,8 +861,10 @@ export default function Home() {
   }, [isLayoutChanged]);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-6 py-12">
-      <Card className="rounded-3xl bg-white/70 backdrop-blur-md shadow-lg">
+    <ActiveEditorProvider>
+      <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-6 py-12">
+        <TopToolbar />
+        <Card className="rounded-3xl bg-white/70 backdrop-blur-md shadow-lg">
         <div className="px-6 py-4 flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-semibold text-zinc-950">简历编辑器</h1>
@@ -1173,5 +1177,6 @@ export default function Home() {
         onResumeDeleted={handlePanelResumeDeleted}
       />
     </div>
+    </ActiveEditorProvider>
   );
 }

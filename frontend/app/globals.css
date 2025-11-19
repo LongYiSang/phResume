@@ -35,3 +35,62 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.text-item-editor,
+.text-item-readonly {
+  width: 100%;
+  min-height: 100%;
+  outline: none;
+  border: none;
+  background: transparent;
+  font-size: inherit;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: inherit;
+  font-family: inherit;
+}
+
+.text-item-editor p,
+.text-item-readonly p {
+  margin: 0 0 0.5rem;
+}
+
+.text-item-editor h1,
+.text-item-readonly h1 {
+  font-size: 1.5em;
+  font-weight: 700;
+  margin: 1rem 0 0.5rem;
+}
+
+.text-item-editor h2,
+.text-item-readonly h2 {
+  font-size: 1.25em;
+  font-weight: 600;
+  margin: 0.75rem 0 0.4rem;
+}
+
+.text-item-editor h3,
+.text-item-readonly h3 {
+  font-size: 1.125em;
+  font-weight: 600;
+  margin: 0.6rem 0 0.3rem;
+}
+
+.text-item-editor ul,
+.text-item-readonly ul {
+  padding-left: 1.25rem;
+  margin: 0.5rem 0;
+  list-style: disc;
+}
+
+.text-item-editor ol,
+.text-item-readonly ol {
+  padding-left: 1.25rem;
+  margin: 0.5rem 0;
+  list-style: decimal;
+}
+
+.text-item-editor li,
+.text-item-readonly li {
+  margin: 0.25rem 0;
+}

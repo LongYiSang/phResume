@@ -1,6 +1,7 @@
 # Node.js
 node_modules/
 .next/
+.trae
 out/
 build/
 dist/
@@ -34,3 +35,6 @@ tmp/
 # Build caches
 .turbo/
 .vercel/
+/backend/test.pdf
+/backend/internal/config/config_test.go
+/backend/api
