@@ -1,31 +1,52 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hibiken/asynq"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
+	"phResume/internal/api/middleware"
 	"phResume/internal/database"
+	"phResume/internal/resume"
+	"phResume/internal/storage"
+	"phResume/internal/tasks"
 )
 
 // TemplateHandler 负责模板相关的 API。
 type TemplateHandler struct {
-	db           *gorm.DB
-	maxTemplates int
+	db             *gorm.DB
+	asynqClient    *asynq.Client
+	storage        *storage.Client
+	internalSecret string
+	maxTemplates   int
 }
 
-func NewTemplateHandler(db *gorm.DB, maxTemplates int) *TemplateHandler {
-	return &TemplateHandler{db: db, maxTemplates: maxTemplates}
+func NewTemplateHandler(
+	db *gorm.DB,
+	asynqClient *asynq.Client,
+	storageClient *storage.Client,
+	internalSecret string,
+	maxTemplates int,
+) *TemplateHandler {
+	return &TemplateHandler{
+		db:             db,
+		asynqClient:    asynqClient,
+		storage:        storageClient,
+		internalSecret: internalSecret,
+		maxTemplates:   maxTemplates,
+	}
 }
 
 type createTemplateRequest struct {
-	Title           string         `json:"title" binding:"required"`
-	Content         datatypes.JSON `json:"content" binding:"required"`
-	PreviewImageURL *string        `json:"preview_image_url"`
+	Title   string         `json:"title" binding:"required"`
+	Content datatypes.JSON `json:"content" binding:"required"`
 	// 目前创建默认私有，若后续需要开放，可增加 IsPublic 入参并严格校验
 }
 
@@ -63,9 +84,6 @@ func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 		Content:  req.Content,
 		UserID:   userID,
 		IsPublic: false,
-	}
-	if req.PreviewImageURL != nil {
-		model.PreviewImageURL = *req.PreviewImageURL
 	}
 
 	var count int64
@@ -200,4 +218,103 @@ func (h *TemplateHandler) GetTemplate(c *gin.Context) {
 		Content:         model.Content,
 		PreviewImageURL: model.PreviewImageURL,
 	})
+}
+
+// POST /v1/templates/:id/generate-preview
+func (h *TemplateHandler) GeneratePreview(c *gin.Context) {
+	userID, ok := userIDFromContext(c)
+	if !ok {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || id == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid template id"})
+		return
+	}
+
+	var model database.Template
+	if err := h.db.WithContext(c.Request.Context()).
+		First(&model, uint(id)).Error; err != nil {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query template"})
+		}
+		return
+	}
+
+	if model.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+		return
+	}
+
+	correlationID := middleware.GetCorrelationID(c)
+	task, err := tasks.NewTemplatePreviewTask(model.ID, correlationID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create preview task"})
+		return
+	}
+
+	info, err := h.asynqClient.Enqueue(task, asynq.MaxRetry(5))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to enqueue preview task"})
+		return
+	}
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"message": "template preview generation scheduled",
+		"task_id": info.ID,
+	})
+}
+
+// GET /v1/templates/print/:id
+func (h *TemplateHandler) GetPrintTemplateData(c *gin.Context) {
+	if h.internalSecret == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal api secret is not configured"})
+		return
+	}
+
+	token := strings.TrimSpace(c.Query("internal_token"))
+	if token == "" || token != h.internalSecret {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	templateID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid template id"})
+		return
+	}
+
+	var templateModel database.Template
+	ctx := c.Request.Context()
+	if err := h.db.WithContext(ctx).First(&templateModel, uint(templateID)).Error; err != nil {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load template"})
+		}
+		return
+	}
+
+	var content resume.Content
+	if err := json.Unmarshal(templateModel.Content, &content); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode template"})
+		return
+	}
+
+	if err := inlineContentImages(ctx, h.storage, templateModel.UserID, &content); err != nil {
+		if status, ok := statusFromInlineError(err); ok {
+			c.JSON(status, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, content)
 }

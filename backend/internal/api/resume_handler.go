@@ -2,11 +2,8 @@ package api
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -501,39 +498,13 @@ func (h *ResumeHandler) GetPrintResumeData(c *gin.Context) {
 		return
 	}
 
-	imagePrefix := fmt.Sprintf("user-assets/%d/", resumeModel.UserID)
-	for idx := range content.Items {
-		if content.Items[idx].Type != "image" {
-			continue
-		}
-		objectKey := strings.TrimSpace(content.Items[idx].Content)
-		if objectKey == "" {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "image object key missing"})
+	if err := inlineContentImages(ctx, h.storage, resumeModel.UserID, &content); err != nil {
+		if status, ok := statusFromInlineError(err); ok {
+			c.JSON(status, gin.H{"error": err.Error()})
 			return
 		}
-		if !strings.HasPrefix(objectKey, imagePrefix) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "invalid image object key"})
-			return
-		}
-		obj, err := h.storage.GetObject(ctx, objectKey)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch image"})
-			return
-		}
-		stat, statErr := obj.Stat()
-		contentType := "image/png"
-		if statErr == nil && stat.ContentType != "" {
-			contentType = stat.ContentType
-		}
-		imageBytes, err := io.ReadAll(obj)
-		_ = obj.Close()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read image"})
-			return
-		}
-		base64Image := base64.StdEncoding.EncodeToString(imageBytes)
-		dataURI := fmt.Sprintf("data:%s;base64,%s", contentType, base64Image)
-		content.Items[idx].Content = dataURI
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 
 	c.JSON(http.StatusOK, content)

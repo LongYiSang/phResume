@@ -76,10 +76,12 @@ func main() {
 	}
 
 	pdfHandler := worker.NewPDFTaskHandler(db, storageClient, redisClient, logger, internalSecret)
+	templatePreviewHandler := worker.NewTemplatePreviewHandler(db, storageClient, logger, internalSecret)
 
 	mux := asynq.NewServeMux()
 	mux.Use(metrics.AsynqMetricsMiddleware())
 	mux.Handle(tasks.TypePDFGenerate, pdfHandler)
+	mux.Handle(tasks.TypeTemplatePreview, templatePreviewHandler)
 
 	logger.Info("worker service started", slog.String("redis_addr", redisAddr))
 	if err := server.Run(mux); err != nil {

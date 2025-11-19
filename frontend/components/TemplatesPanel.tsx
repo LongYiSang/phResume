@@ -31,8 +31,17 @@ export function TemplatesPanel({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveTitle, setSaveTitle] = useState("");
+  const [previewLoadingMap, setPreviewLoadingMap] = useState<Record<number, boolean>>({});
   const authFetch = useAuthFetch();
   const canInteract = useMemo(() => Boolean(accessToken), [accessToken]);
+  const refreshTemplates = async () => {
+    const resp = await authFetch("/api/v1/templates");
+    if (!resp.ok) {
+      return;
+    }
+    const data = (await resp.json()) as TemplateListItem[];
+    setTemplates(Array.isArray(data) ? data : []);
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -132,14 +141,38 @@ export function TemplatesPanel({
       }
       // 保存成功，刷新列表
       setSaveTitle("");
-      const reload = await authFetch("/api/v1/templates");
-      if (reload.ok) {
-        const data = (await reload.json()) as TemplateListItem[];
-        setTemplates(Array.isArray(data) ? data : []);
-      }
+      await refreshTemplates();
     } catch (err) {
       console.error("保存模板失败", err);
       setError("保存模板失败，请重试");
+    }
+  };
+
+  const handleGeneratePreview = async (id: number) => {
+    if (!accessToken) {
+      setError("请先登录");
+      return;
+    }
+    setError(null);
+    setPreviewLoadingMap((prev) => ({ ...prev, [id]: true }));
+    try {
+      const resp = await authFetch(`/api/v1/templates/${id}/generate-preview`, {
+        method: "POST",
+      });
+      if (!resp.ok) {
+        throw new Error("generate preview failed");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await refreshTemplates();
+    } catch (err) {
+      console.error("生成模板预览失败", err);
+      setError("生成模板预览失败，请稍后重试");
+    } finally {
+      setPreviewLoadingMap((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     }
   };
 
@@ -222,23 +255,31 @@ export function TemplatesPanel({
               </div>
             )}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {templates.map((t) => (
-                <div
-                  key={t.id}
-                  className="flex items-center gap-3 rounded-md border border-zinc-200 p-2 dark:border-zinc-800"
-                >
-                  {t.preview_image_url ? (
-                    // 简易缩略图
-                    <img
-                      src={t.preview_image_url}
-                      alt={t.title}
-                      className="h-12 w-12 rounded object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-12 w-12 items-center justify-center rounded bg-zinc-100 text-[10px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                      无预览
+              {templates.map((t) => {
+                const isPreviewUpdating = Boolean(previewLoadingMap[t.id]);
+                return (
+                  <div
+                    key={t.id}
+                    className="flex items-center gap-3 rounded-md border border-zinc-200 p-2 dark:border-zinc-800"
+                  >
+                    <div className="relative h-12 w-12">
+                      {t.preview_image_url ? (
+                        <img
+                          src={t.preview_image_url}
+                          alt={t.title}
+                          className="h-12 w-12 rounded object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center rounded bg-zinc-100 text-[10px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                          <CameraIcon className="h-4 w-4 opacity-70" />
+                        </div>
+                      )}
+                      {isPreviewUpdating && (
+                        <div className="absolute inset-0 flex items-center justify-center rounded bg-black/30">
+                          <SpinnerIcon className="h-4 w-4 text-white" />
+                        </div>
+                      )}
                     </div>
-                  )}
                   <div className="flex-1 overflow-hidden">
                     <div className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
                       {t.title}
@@ -254,17 +295,40 @@ export function TemplatesPanel({
                       应用
                     </button>
                     {t.is_owner && (
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(t.id)}
-                        className="rounded-md border border-red-200 px-3 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-500/40 dark:text-red-300 dark:hover:bg-red-900/30"
-                      >
-                        删除
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleGeneratePreview(t.id)}
+                          disabled={!canInteract || isPreviewUpdating}
+                          className="rounded-md border border-zinc-300 px-3 py-1 text-xs text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                        >
+                          <span className="flex items-center justify-center gap-1">
+                            {isPreviewUpdating ? (
+                              <>
+                                <SpinnerIcon className="h-3.5 w-3.5" />
+                                <span>生成中</span>
+                              </>
+                            ) : (
+                              <>
+                                <CameraIcon className="h-3.5 w-3.5" />
+                                <span>刷新预览</span>
+                              </>
+                            )}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(t.id)}
+                          className="rounded-md border border-red-200 px-3 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-500/40 dark:text-red-300 dark:hover:bg-red-900/30"
+                        >
+                          删除
+                        </button>
+                      </>
                     )}
                   </div>
-                </div>
-              ))}
+                  </div>
+                );
+              })}
               {templates.length === 0 && !isLoading && (
                 <div className="col-span-full select-none rounded border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
                   暂无模板
@@ -275,5 +339,52 @@ export function TemplatesPanel({
         </div>
       </div>
     </div>
+  );
+}
+
+function CameraIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      <path d="M4 8h3.2l1.2-2h7.2l1.2 2H20v11H4z" />
+      <circle cx="12" cy="13" r="3.5" />
+    </svg>
+  );
+}
+
+function SpinnerIcon({
+  className,
+  ...props
+}: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={`animate-spin ${className ?? ""}`}
+      {...props}
+      aria-hidden="true"
+    >
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+        fill="none"
+      />
+      <path
+        className="opacity-90"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4z"
+      />
+    </svg>
   );
 }

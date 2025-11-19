@@ -32,7 +32,7 @@ func RegisterRoutes(
 	wsHandler := NewWsHandler(redisClient, authService, logger)
 	authMiddleware := middleware.AuthMiddleware(authService)
 	assetHandler := NewAssetHandler(storageClient, logger, clamdAddr)
-	templateHandler := NewTemplateHandler(db, maxTemplates)
+	templateHandler := NewTemplateHandler(db, asynqClient, storageClient, os.Getenv("INTERNAL_API_SECRET"), maxTemplates)
 
 	v1 := router.Group("/v1")
 	{
@@ -47,6 +47,7 @@ func RegisterRoutes(
 		}
 
 		v1.GET("/resume/print/:id", resumeHandler.GetPrintResumeData)
+		v1.GET("/templates/print/:id", templateHandler.GetPrintTemplateData)
 
 		resumeGroup := v1.Group("/resume")
 		resumeGroup.Use(authMiddleware)
@@ -74,6 +75,7 @@ func RegisterRoutes(
 			templatesGroup.GET("", templateHandler.ListTemplates)
 			templatesGroup.GET("/:id", templateHandler.GetTemplate)
 			templatesGroup.POST("", templateHandler.CreateTemplate)
+			templatesGroup.POST("/:id/generate-preview", templateHandler.GeneratePreview)
 			templatesGroup.DELETE("/:id", templateHandler.DeleteTemplate)
 		}
 	}
