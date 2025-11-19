@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ResumeData } from "@/types/resume";
 import { useAuthFetch } from "@/hooks/useAuthFetch";
 import { normalizeResumeContent } from "@/utils/resume";
+import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Input, Card } from "@heroui/react";
 
 type ResumeListItem = {
   id: number;
@@ -40,6 +41,8 @@ export function MyResumesPanel({
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 6;
   const authFetch = useAuthFetch();
   const canInteract = useMemo(
     () => Boolean(accessToken && currentResumeData),
@@ -89,6 +92,7 @@ export function MyResumesPanel({
       }
       const data = (await resp.json()) as ResumeListItem[];
       setResumes(Array.isArray(data) ? data : []);
+      setPage(1);
     } catch (err) {
       console.error("刷新简历列表失败", err);
     }
@@ -212,119 +216,90 @@ export function MyResumesPanel({
     }
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-3xl rounded-lg bg-white p-4 shadow-lg dark:bg-zinc-900">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-            我的简历
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md border border-zinc-300 px-3 py-1 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800"
-          >
-            关闭
-          </button>
-        </div>
-
-        <div className="space-y-4">
-          <div className="rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-            <h3 className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-              另存为新简历
-            </h3>
-            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-              输入标题后保存为新的独立简历。普通用户最多可保存 3 份。
-            </p>
+    <Modal isOpen={isOpen} onOpenChange={(open) => !open && onClose()} backdrop="blur">
+      <ModalContent className="rounded-3xl">
+        <ModalHeader>我的简历</ModalHeader>
+        <ModalBody>
+          <Card className="p-3 rounded-2xl bg-white/70 backdrop-blur-md">
+            <h3 className="text-sm font-medium text-zinc-800 dark:text-zinc-200">另存为新简历</h3>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">输入标题后保存为新的独立简历。普通用户最多可保存 3 份。</p>
             <div className="mt-3 flex gap-2">
-              <input
-                type="text"
+              <Input
                 value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
+                onChange={(e) => setNewTitle((e.target as HTMLInputElement).value)}
                 placeholder="请输入新简历标题"
-                className="flex-1 rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                className="flex-1 rounded-2xl"
               />
-              <button
-                type="button"
-                onClick={handleCreate}
-                disabled={!canInteract || actionLoading}
-                className="whitespace-nowrap rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-              >
+              <Button color="primary" onPress={handleCreate} isDisabled={!canInteract || actionLoading} className="rounded-2xl">
                 {actionLoading ? "处理中..." : "保存为新简历"}
-              </button>
+              </Button>
             </div>
-          </div>
+          </Card>
 
-          <div className="rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+          <Card className="p-3 rounded-2xl bg-white/70 backdrop-blur-md">
             <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                我的简历列表
-              </h3>
-              {isLoading && (
-                <span className="text-xs text-zinc-500">加载中...</span>
-              )}
+              <h3 className="text-sm font-medium text-zinc-800 dark:text-zinc-200">我的简历列表</h3>
+              {isLoading && <span className="text-xs text-zinc-500">加载中...</span>}
             </div>
             {error && (
-              <div className="mb-3 rounded bg-red-100 px-2 py-1 text-xs text-red-700 dark:bg-red-900/40 dark:text-red-200">
-                {error}
-              </div>
+              <div className="mb-3 rounded bg-red-100 px-2 py-1 text-xs text-red-700 dark:bg-red-900/40 dark:text-red-200">{error}</div>
             )}
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-              {resumes.map((resume) => (
-                <div
-                  key={resume.id}
-                  className="flex gap-3 rounded-md border border-zinc-200 p-2 dark:border-zinc-800"
-                >
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+              {resumes
+                .slice((page - 1) * pageSize, page * pageSize)
+                .map((resume) => (
+                <div key={resume.id} className="flex gap-3 rounded-2xl border border-zinc-200 p-2">
                   {resume.preview_image_url ? (
-                    <img
-                      src={resume.preview_image_url}
-                      alt={resume.title}
-                      className="h-16 w-16 rounded object-cover"
-                    />
+                    <img src={resume.preview_image_url} alt={resume.title} className="h-16 w-16 rounded object-cover" />
                   ) : (
-                    <div className="flex h-16 w-16 items-center justify-center rounded bg-zinc-100 text-[10px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                      预览
-                    </div>
+                    <div className="flex h-16 w-16 items-center justify-center rounded bg-zinc-100 text-[10px] text-zinc-500">预览</div>
                   )}
                   <div className="flex flex-1 flex-col">
-                    <span className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                      {resume.title}
-                    </span>
-                    <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                      {resume.created_at
-                        ? new Date(resume.created_at).toLocaleString()
-                        : "创建时间未知"}
+                    <span className="truncate text-sm font-medium text-zinc-900">{resume.title}</span>
+                    <span className="text-xs text-zinc-500">
+                      {resume.created_at ? new Date(resume.created_at).toLocaleString() : "创建时间未知"}
                     </span>
                     <div className="mt-2 flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleLoad(resume.id)}
-                        className="rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800"
-                      >
-                        加载
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(resume.id)}
-                        className="rounded-md border border-zinc-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-zinc-700 dark:text-red-400 dark:hover:bg-red-900/30"
-                      >
-                        删除
-                      </button>
+                      <Button variant="bordered" onPress={() => handleLoad(resume.id)} className="rounded-2xl">加载</Button>
+                      <Button variant="bordered" color="danger" onPress={() => handleDelete(resume.id)} className="rounded-2xl">删除</Button>
                     </div>
                   </div>
                 </div>
               ))}
               {resumes.length === 0 && !isLoading && (
-                <div className="col-span-full select-none rounded border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-                  暂无已保存的简历
-                </div>
+                <div className="col-span-full select-none rounded-2xl border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500">暂无已保存的简历</div>
               )}
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
+            {resumes.length > pageSize && (
+              <div className="mt-3 flex items-center justify-center gap-2">
+                <Button
+                  variant="bordered"
+                  className="rounded-2xl"
+                  isDisabled={page === 1}
+                  onPress={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  上一页
+                </Button>
+                <div className="text-xs text-zinc-500">
+                  第 {page} / {Math.ceil(resumes.length / pageSize)} 页
+                </div>
+                <Button
+                  variant="bordered"
+                  className="rounded-2xl"
+                  isDisabled={page >= Math.ceil(resumes.length / pageSize)}
+                  onPress={() => setPage((p) => Math.min(Math.ceil(resumes.length / pageSize), p + 1))}
+                >
+                  下一页
+                </Button>
+              </div>
+            )}
+          </Card>
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="bordered" onPress={onClose} className="rounded-2xl">关闭</Button>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }

@@ -25,6 +25,7 @@ import {
   type LexicalEditor,
   type LexicalNode,
 } from "lexical";
+import { FORMAT_TEXT_COMMAND } from "lexical";
 
 const DEFAULT_HTML = "<p></p>";
 
@@ -171,3 +172,4 @@ export function TextItem({
     </LexicalComposer>
   );
 }
+// 工具栏移至样式面板侧，模块内部不再渲染工具按钮

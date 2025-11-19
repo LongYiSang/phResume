@@ -20,6 +20,7 @@ import { TemplatesPanel } from "@/components/TemplatesPanel";
 import { MyResumesPanel } from "@/components/MyResumesPanel";
 import { useAuth } from "@/context/AuthContext";
 import { useAuthFetch } from "@/hooks/useAuthFetch";
+import { Button, Card } from "@heroui/react";
 import {
   DEFAULT_LAYOUT_SETTINGS,
   GRID_COLS,
@@ -359,6 +360,8 @@ export default function Home() {
     setError(null);
     setTaskStatus("pending");
 
+    // 不再主动轮询，等待 WebSocket 完成消息后再打开最新 PDF
+
     try {
       const response = await authFetch(
         `/api/v1/resume/${savedResumeId}/download`,
@@ -367,6 +370,8 @@ export default function Home() {
       if (!response.ok) {
         throw new Error("下载失败");
       }
+
+      // 生成任务已提交，待 WebSocket 完成后再触发 fetchDownloadLink
     } catch (err) {
       console.error("生成任务提交失败", err);
       setError("生成任务提交失败，请稍后重试");
@@ -536,7 +541,15 @@ export default function Home() {
                 ...item,
                 style: {
                   ...(item.style ?? {}),
-                  color: newColor,
+                  color: item.type === "divider" ? (item.style?.color ?? undefined) : newColor,
+                  borderColor:
+                    item.type === "divider"
+                      ? newColor
+                      : (item.style as any)?.borderColor,
+                  borderTop:
+                    item.type === "divider" && typeof item.style?.borderTop === "string"
+                      ? item.style?.borderTop.replace(/(solid\s*)(#[0-9a-fA-F]{3,8}|rgb\([^\)]+\)|hsl\([^\)]+\))/i, `$1${newColor}`)
+                      : item.style?.borderTop,
                 },
               },
         );
@@ -847,14 +860,14 @@ export default function Home() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-6 py-12">
-      <header>
-        <h1 className="text-3xl font-semibold text-zinc-950 dark:text-zinc-50">
-          简历编辑器
-        </h1>
-        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-          加载并编辑结构化 JSON 布局，保存后可生成 PDF。
-        </p>
-      </header>
+      <Card className="rounded-3xl bg-white/70 backdrop-blur-md shadow-lg">
+        <div className="px-6 py-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-semibold text-zinc-950">简历编辑器</h1>
+            <p className="mt-1 text-sm text-zinc-600">加载并编辑结构化 JSON 布局，保存后可生成 PDF。</p>
+          </div>
+        </div>
+      </Card>
 
       {isFetchingResume && (
         <div className="text-sm text-zinc-500 dark:text-zinc-400">
@@ -880,6 +893,60 @@ export default function Home() {
                 onSelectedItemFontSizeChange={handleItemFontSizeChange}
                 selectedItemColor={selectedItemColor}
                 onSelectedItemColorChange={handleItemColorChange}
+                onToggleBold={() => {
+                  if (!selectedItemId) return;
+                  withHistory((prev) => {
+                    const updated = prev.items.map((it) =>
+                      it.id !== selectedItemId
+                        ? it
+                        : {
+                            ...it,
+                            style: {
+                              ...(it.style ?? {}),
+                              fontWeight:
+                                (it.style as any)?.fontWeight === "bold" ? "normal" : "bold",
+                            },
+                          },
+                    );
+                    return { ...prev, items: updated };
+                  });
+                }}
+                onToggleItalic={() => {
+                  if (!selectedItemId) return;
+                  withHistory((prev) => {
+                    const updated = prev.items.map((it) =>
+                      it.id !== selectedItemId
+                        ? it
+                        : {
+                            ...it,
+                            style: {
+                              ...(it.style ?? {}),
+                              fontStyle:
+                                (it.style as any)?.fontStyle === "italic" ? "normal" : "italic",
+                            },
+                          },
+                    );
+                    return { ...prev, items: updated };
+                  });
+                }}
+                onToggleUnderline={() => {
+                  if (!selectedItemId) return;
+                  withHistory((prev) => {
+                    const updated = prev.items.map((it) => {
+                      if (it.id !== selectedItemId) return it;
+                      const curr = String((it.style as any)?.textDecoration ?? "none");
+                      const next = curr.includes("underline") ? "none" : "underline";
+                      return {
+                        ...it,
+                        style: {
+                          ...(it.style ?? {}),
+                          textDecoration: next,
+                        },
+                      };
+                    });
+                    return { ...prev, items: updated };
+                  });
+                }}
               />
             ) : (
               <div className="rounded-xl border border-dashed border-zinc-300 bg-white/70 p-4 text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-400">
@@ -988,7 +1055,7 @@ export default function Home() {
                       return (
                         <div
                           key={item.id}
-                          className={`relative h-full w-full rounded-md border border-dashed bg-white/90 text-sm text-zinc-900 shadow-sm ${
+                          className={`group relative h-full w-full rounded-md border border-dashed bg-white/90 text-sm text-zinc-900 shadow-sm ${
                             isOverlapped
                               ? "border-red-500 ring-2 ring-red-400"
                               : isSelected
@@ -1005,16 +1072,17 @@ export default function Home() {
                               重叠
                             </div>
                           )}
-                          <div className="rgl-drag-handle absolute right-2 top-2 cursor-move rounded-full border border-zinc-300 bg-white/80 px-2 py-0.5 text-xs text-zinc-500 shadow-sm hover:bg-white">
+                          <div className="rgl-drag-handle absolute right-2 top-2 hidden cursor-move rounded-full border border-zinc-300 bg-white/80 px-2 py-0.5 text-xs text-zinc-500 shadow-sm group-hover:flex">
                             拖动
                           </div>
                           <button
                             type="button"
-                            className="absolute right-14 top-2 rounded-full border border-zinc-300 bg-white/80 px-2 py-0.5 text-xs text-red-500 shadow-sm hover:bg-white"
+                            className="absolute right-14 top-2 hidden rounded-full border border-zinc-300 bg-white/80 px-2 py-0.5 text-xs text-red-500 shadow-sm group-hover:flex"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleDeleteItem(item.id);
                             }}
+                            aria-label="删除模块"
                           >
                             删除
                           </button>
@@ -1063,52 +1131,12 @@ export default function Home() {
       </div>
 
       <div className="flex flex-wrap gap-4">
-        <button
-          type="button"
-          onClick={handleUndo}
-          disabled={historyStack.length === 0}
-          className="rounded-md border border-zinc-300 px-6 py-2 text-sm font-medium text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400 dark:border-zinc-600 dark:text-zinc-100 dark:hover:bg-zinc-800"
-        >
-          撤销
-        </button>
-        <button
-          type="button"
-          onClick={handleRedo}
-          disabled={redoStack.length === 0}
-          className="rounded-md border border-zinc-300 px-6 py-2 text-sm font-medium text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400 dark:border-zinc-600 dark:text-zinc-100 dark:hover:bg-zinc-800"
-        >
-          重做
-        </button>
-        <button
-          type="button"
-          onClick={() => setIsTemplatesOpen(true)}
-          className="rounded-md border border-zinc-300 px-6 py-2 text-sm font-medium text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400 dark:border-zinc-600 dark:text-zinc-100 dark:hover:bg-zinc-800"
-        >
-          模板
-        </button>
-        <button
-          type="button"
-          onClick={() => setIsMyResumesOpen(true)}
-          className="rounded-md border border-zinc-300 px-6 py-2 text-sm font-medium text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400 dark:border-zinc-600 dark:text-zinc-100 dark:hover:bg-zinc-800"
-        >
-          我的简历
-        </button>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={isLoading || isFetchingResume}
-          className="rounded-md bg-zinc-900 px-6 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-        >
-          {isLoading ? "保存中..." : "保存简历"}
-        </button>
-        <button
-          type="button"
-          onClick={handleDownload}
-          disabled={savedResumeId === null || taskStatus === "pending"}
-          className="rounded-md border border-zinc-300 px-6 py-2 text-sm font-medium text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400 dark:border-zinc-600 dark:text-zinc-100 dark:hover:bg-zinc-800"
-        >
-          {renderDownloadLabel()}
-        </button>
+        <Button variant="bordered" className="rounded-2xl" isDisabled={historyStack.length === 0} onPress={handleUndo}>撤销</Button>
+        <Button variant="bordered" className="rounded-2xl" isDisabled={redoStack.length === 0} onPress={handleRedo}>重做</Button>
+        <Button variant="bordered" className="rounded-2xl" onPress={() => setIsTemplatesOpen(true)}>模板</Button>
+        <Button variant="bordered" className="rounded-2xl" onPress={() => setIsMyResumesOpen(true)}>我的简历</Button>
+        <Button color="primary" className="rounded-2xl" isDisabled={isLoading || isFetchingResume} onPress={handleSave}>{isLoading ? "保存中..." : "保存简历"}</Button>
+        <Button variant="bordered" className="rounded-2xl" isDisabled={savedResumeId === null || taskStatus === "pending"} onPress={handleDownload}>{renderDownloadLabel()}</Button>
       </div>
 
       {savedResumeId !== null && (

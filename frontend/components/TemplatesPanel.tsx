@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ResumeData } from "@/types/resume";
 import { useAuthFetch } from "@/hooks/useAuthFetch";
 import { normalizeResumeContent } from "@/utils/resume";
+import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Input, Card } from "@heroui/react";
 
 type TemplateListItem = {
   id: number;
@@ -198,79 +199,44 @@ export function TemplatesPanel({
     }
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-2xl rounded-lg bg-white p-4 shadow-lg dark:bg-zinc-900">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-            模板
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md border border-zinc-300 px-3 py-1 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800"
-          >
-            关闭
-          </button>
-        </div>
-
-        <div className="space-y-4">
-          <div className="rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-            <h3 className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-              保存当前为模板
-            </h3>
+    <Modal isOpen={isOpen} onOpenChange={(open) => !open && onClose()} backdrop="blur">
+      <ModalContent className="rounded-3xl">
+        <ModalHeader>模板</ModalHeader>
+        <ModalBody>
+          <Card className="p-3 rounded-2xl bg-white/70 backdrop-blur-md">
+            <h3 className="text-sm font-medium text-zinc-800 dark:text-zinc-200">保存当前为模板</h3>
             <div className="mt-2 flex gap-2">
-              <input
-                type="text"
+              <Input
                 value={saveTitle}
-                onChange={(e) => setSaveTitle(e.target.value)}
+                onChange={(e) => setSaveTitle((e.target as HTMLInputElement).value)}
                 placeholder="请输入模板标题"
-                className="flex-1 rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                className="flex-1 rounded-2xl"
               />
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={!canInteract || !currentResumeData}
-                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-              >
+              <Button color="primary" onPress={handleSave} isDisabled={!canInteract || !currentResumeData} className="rounded-2xl">
                 保存
-              </button>
+              </Button>
             </div>
-          </div>
+          </Card>
 
-          <div className="rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+          <Card className="p-3 rounded-2xl bg-white/70 backdrop-blur-md">
             <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                我的模板与公开模板
-              </h3>
-              {isLoading && (
-                <span className="text-xs text-zinc-500">加载中...</span>
-              )}
+              <h3 className="text-sm font-medium text-zinc-800 dark:text-zinc-200">我的模板与公开模板</h3>
+              {isLoading && <span className="text-xs text-zinc-500">加载中...</span>}
             </div>
             {error && (
-              <div className="mb-2 rounded bg-red-100 px-2 py-1 text-xs text-red-700 dark:bg-red-900/40 dark:text-red-200">
-                {error}
-              </div>
+              <div className="mb-2 rounded bg-red-100 px-2 py-1 text-xs text-red-700 dark:bg-red-900/40 dark:text-red-200">{error}</div>
             )}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {templates.map((t) => {
                 const isPreviewUpdating = Boolean(previewLoadingMap[t.id]);
                 return (
-                  <div
-                    key={t.id}
-                    className="flex items-center gap-3 rounded-md border border-zinc-200 p-2 dark:border-zinc-800"
-                  >
+                  <div key={t.id} className="flex items-center gap-3 rounded-2xl border border-zinc-200 p-2">
                     <div className="relative h-12 w-12">
                       {t.preview_image_url ? (
-                        <img
-                          src={t.preview_image_url}
-                          alt={t.title}
-                          className="h-12 w-12 rounded object-cover"
-                        />
+                        <img src={t.preview_image_url} alt={t.title} className="h-12 w-12 rounded object-cover" />
                       ) : (
-                        <div className="flex h-full w-full items-center justify-center rounded bg-zinc-100 text-[10px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                        <div className="flex h-full w-full items-center justify-center rounded bg-zinc-100 text-[10px] text-zinc-500">
                           <CameraIcon className="h-4 w-4 opacity-70" />
                         </div>
                       )}
@@ -280,65 +246,55 @@ export function TemplatesPanel({
                         </div>
                       )}
                     </div>
-                  <div className="flex-1 overflow-hidden">
-                    <div className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                      {t.title}
+                    <div className="flex-1 overflow-hidden">
+                      <div className="truncate text-sm font-medium text-zinc-900">{t.title}</div>
                     </div>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <button
-                      type="button"
-                      onClick={() => handleApply(t.id)}
-                      disabled={!canInteract}
-                      className="rounded-md border border-zinc-300 px-3 py-1 text-xs text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800"
-                    >
-                      应用
-                    </button>
-                    {t.is_owner && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleGeneratePreview(t.id)}
-                          disabled={!canInteract || isPreviewUpdating}
-                          className="rounded-md border border-zinc-300 px-3 py-1 text-xs text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800"
-                        >
-                          <span className="flex items-center justify-center gap-1">
-                            {isPreviewUpdating ? (
-                              <>
-                                <SpinnerIcon className="h-3.5 w-3.5" />
-                                <span>生成中</span>
-                              </>
-                            ) : (
-                              <>
-                                <CameraIcon className="h-3.5 w-3.5" />
-                                <span>刷新预览</span>
-                              </>
-                            )}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(t.id)}
-                          className="rounded-md border border-red-200 px-3 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-500/40 dark:text-red-300 dark:hover:bg-red-900/30"
-                        >
-                          删除
-                        </button>
-                      </>
-                    )}
-                  </div>
+                    <div className="flex flex-col gap-1">
+                      <Button variant="bordered" onPress={() => handleApply(t.id)} isDisabled={!canInteract} className="rounded-2xl">
+                        应用
+                      </Button>
+                      {t.is_owner && (
+                        <>
+                          <Button
+                            variant="bordered"
+                            onPress={() => handleGeneratePreview(t.id)}
+                            isDisabled={!canInteract || isPreviewUpdating}
+                            className="rounded-2xl"
+                          >
+                            <span className="flex items-center justify-center gap-1">
+                              {isPreviewUpdating ? (
+                                <>
+                                  <SpinnerIcon className="h-3.5 w-3.5" />
+                                  <span>生成中</span>
+                                </>
+                              ) : (
+                                <>
+                                  <CameraIcon className="h-3.5 w-3.5" />
+                                  <span>刷新预览</span>
+                                </>
+                              )}
+                            </span>
+                          </Button>
+                          <Button variant="bordered" color="danger" onPress={() => handleDelete(t.id)} className="rounded-2xl">
+                            删除
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 );
               })}
               {templates.length === 0 && !isLoading && (
-                <div className="col-span-full select-none rounded border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-                  暂无模板
-                </div>
+                <div className="col-span-full select-none rounded-2xl border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500">暂无模板</div>
               )}
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
+          </Card>
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="bordered" onPress={onClose} className="rounded-2xl">关闭</Button>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }
 
