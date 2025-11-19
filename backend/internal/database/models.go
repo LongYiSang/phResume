@@ -8,20 +8,22 @@ import (
 // User 表示系统中的账号信息。
 type User struct {
 	gorm.Model
-	Username     string   `gorm:"uniqueIndex;size:64"`
-	PasswordHash string   `gorm:"size:255"`
-	Resumes      []Resume `gorm:"constraint:OnDelete:CASCADE"`
+	Username       string   `gorm:"uniqueIndex;size:64"`
+	PasswordHash   string   `gorm:"size:255"`
+	Resumes        []Resume `gorm:"constraint:OnDelete:CASCADE"`
+	ActiveResumeID *uint
 }
 
 // Resume 表示用户创建的简历内容。
 type Resume struct {
 	gorm.Model
-	Title   string         `gorm:"size:255"`
-	Content datatypes.JSON `gorm:"type:jsonb"`
-	UserID  uint           `gorm:"index"`
-	User    User           `gorm:"constraint:OnDelete:CASCADE"`
-	PdfUrl  string         `gorm:"size:512"`
-	Status  string         `gorm:"size:32"`
+	Title           string         `gorm:"size:255"`
+	Content         datatypes.JSON `gorm:"type:jsonb"`
+	UserID          uint           `gorm:"index"`
+	User            User           `gorm:"constraint:OnDelete:CASCADE"`
+	PdfUrl          string         `gorm:"size:512"`
+	Status          string         `gorm:"size:32"`
+	PreviewImageURL string         `gorm:"size:512"`
 }
 
 // Template 表示可复用的简历模板。

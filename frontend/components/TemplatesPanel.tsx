@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ResumeData } from "@/types/resume";
 import { useAuthFetch } from "@/hooks/useAuthFetch";
+import { normalizeResumeContent } from "@/utils/resume";
 
 type TemplateListItem = {
   id: number;
   title: string;
   preview_image_url?: string;
+  is_owner?: boolean;
 };
 
 type TemplatesPanelProps = {
@@ -122,6 +124,10 @@ export function TemplatesPanel({
         }),
       });
       if (!resp.ok) {
+        if (resp.status === 403) {
+          setError("已达模板保存上限，请升级会员以扩容。");
+          return;
+        }
         throw new Error("create template failed");
       }
       // 保存成功，刷新列表
@@ -134,6 +140,28 @@ export function TemplatesPanel({
     } catch (err) {
       console.error("保存模板失败", err);
       setError("保存模板失败，请重试");
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!accessToken) {
+      setError("请先登录");
+      return;
+    }
+    const confirmed = window.confirm("确定要删除该模板吗？此操作不可撤销。");
+    if (!confirmed) return;
+    setError(null);
+    try {
+      const resp = await authFetch(`/api/v1/templates/${id}`, {
+        method: "DELETE",
+      });
+      if (!resp.ok && resp.status !== 204) {
+        throw new Error("delete template failed");
+      }
+      setTemplates((prev) => prev.filter((tpl) => tpl.id !== id));
+    } catch (err) {
+      console.error("删除模板失败", err);
+      setError("删除模板失败，请稍后重试");
     }
   };
 
@@ -216,14 +244,25 @@ export function TemplatesPanel({
                       {t.title}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleApply(t.id)}
-                    disabled={!canInteract}
-                    className="rounded-md border border-zinc-300 px-3 py-1 text-xs text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800"
-                  >
-                    应用
-                  </button>
+                  <div className="flex flex-col gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleApply(t.id)}
+                      disabled={!canInteract}
+                      className="rounded-md border border-zinc-300 px-3 py-1 text-xs text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                    >
+                      应用
+                    </button>
+                    {t.is_owner && (
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(t.id)}
+                        className="rounded-md border border-red-200 px-3 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-500/40 dark:text-red-300 dark:hover:bg-red-900/30"
+                      >
+                        删除
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
               {templates.length === 0 && !isLoading && (
@@ -237,53 +276,4 @@ export function TemplatesPanel({
       </div>
     </div>
   );
-}
-
-// 以宽松方式规范化服务端返回的模板 content
-function normalizeResumeContent(content: unknown): ResumeData | null {
-  if (!content) return null;
-  try {
-    // content 可能是对象或 JSON 字符串
-    const raw = typeof content === "string" ? JSON.parse(content) : content;
-    if (!raw || typeof raw !== "object") return null;
-    const obj = raw as Record<string, unknown>;
-    const items = Array.isArray(obj.items) ? obj.items : [];
-    const layout = (obj.layout_settings ?? {}) as Record<string, unknown>;
-    return {
-      layout_settings: {
-        accent_color:
-          typeof layout.accent_color === "string" ? layout.accent_color : "#3388ff",
-        font_family:
-          typeof layout.font_family === "string" ? layout.font_family : "Arial",
-        font_size_pt:
-          typeof layout.font_size_pt === "number" ? layout.font_size_pt : 10,
-        columns: typeof layout.columns === "number" ? layout.columns : 24,
-        row_height_px:
-          typeof layout.row_height_px === "number" ? layout.row_height_px : 10,
-        margin_px: typeof layout.margin_px === "number" ? layout.margin_px : 30,
-      },
-      items: items.map((it, idx) => {
-        const rec = (it as Record<string, unknown>) ?? {};
-        const layoutRaw = (rec.layout as Record<string, unknown>) ?? {};
-        return {
-          id: typeof rec.id === "string" ? rec.id : `item-${idx}`,
-          type: typeof rec.type === "string" ? rec.type : "text",
-          content: typeof rec.content === "string" ? rec.content : "",
-          style:
-            typeof rec.style === "object" && rec.style
-              ? (rec.style as Record<string, string | number>)
-              : {},
-          layout: {
-            x: typeof layoutRaw.x === "number" ? layoutRaw.x : 0,
-            y: typeof layoutRaw.y === "number" ? layoutRaw.y : 0,
-            w: typeof layoutRaw.w === "number" ? layoutRaw.w : 4,
-            h: typeof layoutRaw.h === "number" ? layoutRaw.h : 4,
-          },
-        };
-      }),
-    };
-  } catch (e) {
-    console.error("normalize template content error", e);
-    return null;
-  }
 }

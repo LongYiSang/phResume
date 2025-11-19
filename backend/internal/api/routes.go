@@ -24,13 +24,15 @@ func RegisterRoutes(
 	logger *slog.Logger,
 	storageClient *storage.Client,
 	clamdAddr string,
+	maxResumes int,
+	maxTemplates int,
 ) {
-	resumeHandler := NewResumeHandler(db, asynqClient, storageClient, os.Getenv("INTERNAL_API_SECRET"))
+	resumeHandler := NewResumeHandler(db, asynqClient, storageClient, os.Getenv("INTERNAL_API_SECRET"), maxResumes)
 	authHandler := NewAuthHandler(db, authService, redisClient, logger)
 	wsHandler := NewWsHandler(redisClient, authService, logger)
 	authMiddleware := middleware.AuthMiddleware(authService)
 	assetHandler := NewAssetHandler(storageClient, logger, clamdAddr)
-	templateHandler := NewTemplateHandler(db)
+	templateHandler := NewTemplateHandler(db, maxTemplates)
 
 	v1 := router.Group("/v1")
 	{
@@ -49,8 +51,12 @@ func RegisterRoutes(
 		resumeGroup := v1.Group("/resume")
 		resumeGroup.Use(authMiddleware)
 		{
+			resumeGroup.GET("", resumeHandler.ListResumes)
 			resumeGroup.GET("/latest", resumeHandler.GetLatestResume)
 			resumeGroup.POST("", resumeHandler.CreateResume)
+			resumeGroup.GET("/:id", resumeHandler.GetResume)
+			resumeGroup.PUT("/:id", resumeHandler.UpdateResume)
+			resumeGroup.DELETE("/:id", resumeHandler.DeleteResume)
 			resumeGroup.GET("/:id/download", resumeHandler.DownloadResume)
 			resumeGroup.GET("/:id/download-link", resumeHandler.GetDownloadLink)
 		}
@@ -68,6 +74,7 @@ func RegisterRoutes(
 			templatesGroup.GET("", templateHandler.ListTemplates)
 			templatesGroup.GET("/:id", templateHandler.GetTemplate)
 			templatesGroup.POST("", templateHandler.CreateTemplate)
+			templatesGroup.DELETE("/:id", templateHandler.DeleteTemplate)
 		}
 	}
 }

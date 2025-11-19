@@ -14,11 +14,12 @@ import (
 
 // TemplateHandler 负责模板相关的 API。
 type TemplateHandler struct {
-	db *gorm.DB
+	db           *gorm.DB
+	maxTemplates int
 }
 
-func NewTemplateHandler(db *gorm.DB) *TemplateHandler {
-	return &TemplateHandler{db: db}
+func NewTemplateHandler(db *gorm.DB, maxTemplates int) *TemplateHandler {
+	return &TemplateHandler{db: db, maxTemplates: maxTemplates}
 }
 
 type createTemplateRequest struct {
@@ -32,6 +33,7 @@ type templateListItem struct {
 	ID              uint   `json:"id"`
 	Title           string `json:"title"`
 	PreviewImageURL string `json:"preview_image_url,omitempty"`
+	IsOwner         bool   `json:"is_owner"`
 }
 
 type templateDetailResponse struct {
@@ -66,6 +68,19 @@ func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 		model.PreviewImageURL = *req.PreviewImageURL
 	}
 
+	var count int64
+	if err := h.db.WithContext(c.Request.Context()).
+		Model(&database.Template{}).
+		Where("user_id = ? AND is_public = ?", userID, false).
+		Count(&count).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count templates"})
+		return
+	}
+	if h.maxTemplates > 0 && count >= int64(h.maxTemplates) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "template limit reached"})
+		return
+	}
+
 	if err := h.db.WithContext(c.Request.Context()).Create(&model).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create template"})
 		return
@@ -74,6 +89,47 @@ func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 		"id":    model.ID,
 		"title": model.Title,
 	})
+}
+
+// DELETE /v1/templates/:id
+// 删除模板，仅允许 Owner 删除私有模板。
+func (h *TemplateHandler) DeleteTemplate(c *gin.Context) {
+	userID, ok := userIDFromContext(c)
+	if !ok {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || id == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid template id"})
+		return
+	}
+
+	var model database.Template
+	if err := h.db.WithContext(c.Request.Context()).
+		First(&model, uint(id)).Error; err != nil {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query template"})
+		}
+		return
+	}
+
+	if model.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+		return
+	}
+
+	if err := h.db.WithContext(c.Request.Context()).
+		Delete(&database.Template{}, model.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete template"})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
 }
 
 // GET /v1/templates
@@ -100,6 +156,7 @@ func (h *TemplateHandler) ListTemplates(c *gin.Context) {
 			ID:              t.ID,
 			Title:           t.Title,
 			PreviewImageURL: t.PreviewImageURL,
+			IsOwner:         t.UserID == userID,
 		})
 	}
 	c.JSON(http.StatusOK, items)

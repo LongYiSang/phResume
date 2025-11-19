@@ -30,32 +30,45 @@ type ResumeHandler struct {
 	asynqClient    *asynq.Client
 	storage        *storage.Client
 	internalSecret string
+	maxResumes     int
 }
 
 // NewResumeHandler 构造 ResumeHandler。
-func NewResumeHandler(db *gorm.DB, asynqClient *asynq.Client, storageClient *storage.Client, internalSecret string) *ResumeHandler {
+func NewResumeHandler(db *gorm.DB, asynqClient *asynq.Client, storageClient *storage.Client, internalSecret string, maxResumes int) *ResumeHandler {
 	return &ResumeHandler{
 		db:             db,
 		asynqClient:    asynqClient,
 		storage:        storageClient,
 		internalSecret: internalSecret,
+		maxResumes:     maxResumes,
 	}
 }
 
 var errInvalidResumeID = errors.New("invalid resume id")
 
 type createResumeRequest struct {
-	Title   string         `json:"title" binding:"required"`
-	Content datatypes.JSON `json:"content" binding:"required"`
+	Title           string         `json:"title" binding:"required"`
+	Content         datatypes.JSON `json:"content" binding:"required"`
+	PreviewImageURL *string        `json:"preview_image_url"`
+}
+
+type resumeListItem struct {
+	ID              uint      `json:"id"`
+	Title           string    `json:"title"`
+	PreviewImageURL string    `json:"preview_image_url,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 type resumeResponse struct {
-	ID      uint           `json:"id"`
-	Title   string         `json:"title"`
-	Content datatypes.JSON `json:"content"`
+	ID              uint           `json:"id"`
+	Title           string         `json:"title"`
+	Content         datatypes.JSON `json:"content"`
+	PreviewImageURL string         `json:"preview_image_url,omitempty"`
+	CreatedAt       time.Time      `json:"created_at"`
+	UpdatedAt       time.Time      `json:"updated_at"`
 }
 
-// CreateResume 创建简历并保存到数据库。
+// CreateResume 保存一份新的简历，超过限额则提示升级。
 func (h *ResumeHandler) CreateResume(c *gin.Context) {
 	var req createResumeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -70,43 +83,41 @@ func (h *ResumeHandler) CreateResume(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	var resume database.Resume
-	err := h.db.WithContext(ctx).
-		Where("user_id = ?", userID).
-		Order("updated_at desc").
-		First(&resume).Error
 
-	switch {
-	case errors.Is(err, gorm.ErrRecordNotFound):
-		resume = database.Resume{
-			Title:   req.Title,
-			Content: req.Content,
-			UserID:  userID,
-		}
-		if createErr := h.db.WithContext(ctx).Create(&resume).Error; createErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create resume"})
-			return
-		}
-		c.JSON(http.StatusCreated, newResumeResponse(resume))
+	var count int64
+	if err := h.db.WithContext(ctx).
+		Model(&database.Resume{}).
+		Where("user_id = ?", userID).
+		Count(&count).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count resumes"})
 		return
-	case err != nil:
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upsert resume"})
-		return
-	default:
-		updates := map[string]any{
-			"title":   req.Title,
-			"content": req.Content,
-		}
-		if updateErr := h.db.WithContext(ctx).Model(&resume).Updates(updates).Error; updateErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update resume"})
-			return
-		}
-		if err := h.db.WithContext(ctx).First(&resume, resume.ID).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load resume"})
-			return
-		}
-		c.JSON(http.StatusOK, newResumeResponse(resume))
 	}
+
+	if h.maxResumes > 0 && count >= int64(h.maxResumes) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "resume limit reached"})
+		return
+	}
+
+	resume := database.Resume{
+		Title:   req.Title,
+		Content: req.Content,
+		UserID:  userID,
+	}
+	if req.PreviewImageURL != nil {
+		resume.PreviewImageURL = *req.PreviewImageURL
+	}
+
+	if err := h.db.WithContext(ctx).Create(&resume).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create resume"})
+		return
+	}
+
+	if err := h.setActiveResumeID(ctx, userID, &resume.ID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to mark active resume"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, newResumeResponse(resume))
 }
 
 // GetLatestResume 返回用户最近的简历，或默认模板。
@@ -118,26 +129,237 @@ func (h *ResumeHandler) GetLatestResume(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+	resume, err := h.findActiveOrLatestResume(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusOK, resumeResponse{
+				ID:        0,
+				Title:     defaultResumeTitle,
+				Content:   defaultResumeContent(),
+				CreatedAt: time.Time{},
+				UpdatedAt: time.Time{},
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query latest resume"})
+		return
+	}
+
+	c.JSON(http.StatusOK, newResumeResponse(*resume))
+}
+
+// ListResumes 列出用户全部简历。
+func (h *ResumeHandler) ListResumes(c *gin.Context) {
+	userID, ok := userIDFromContext(c)
+	if !ok {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	var resumes []database.Resume
+	if err := h.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Find(&resumes).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list resumes"})
+		return
+	}
+
+	items := make([]resumeListItem, 0, len(resumes))
+	for _, r := range resumes {
+		items = append(items, resumeListItem{
+			ID:              r.ID,
+			Title:           r.Title,
+			PreviewImageURL: r.PreviewImageURL,
+			CreatedAt:       r.CreatedAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, items)
+}
+
+// GetResume 返回指定 ID 的简历并标记为当前正在编辑。
+func (h *ResumeHandler) GetResume(c *gin.Context) {
+	userID, ok := userIDFromContext(c)
+	if !ok {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	resume, err := h.getResumeForUser(c.Request.Context(), c.Param("id"), userID)
+	if err != nil {
+		switch {
+		case errors.Is(err, errInvalidResumeID):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resume id"})
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "resume not found"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query resume"})
+		}
+		return
+	}
+
+	if err := h.setActiveResumeID(c.Request.Context(), userID, &resume.ID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to mark active resume"})
+		return
+	}
+
+	c.JSON(http.StatusOK, newResumeResponse(*resume))
+}
+
+// UpdateResume 覆盖指定简历。
+func (h *ResumeHandler) UpdateResume(c *gin.Context) {
+	var req createResumeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, ok := userIDFromContext(c)
+	if !ok {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	resume, err := h.getResumeForUser(c.Request.Context(), c.Param("id"), userID)
+	if err != nil {
+		switch {
+		case errors.Is(err, errInvalidResumeID):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resume id"})
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "resume not found"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query resume"})
+		}
+		return
+	}
+
+	updates := map[string]any{
+		"title":   req.Title,
+		"content": req.Content,
+	}
+	if req.PreviewImageURL != nil {
+		updates["preview_image_url"] = *req.PreviewImageURL
+	}
+
+	ctx := c.Request.Context()
+	if err := h.db.WithContext(ctx).Model(resume).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update resume"})
+		return
+	}
+
+	if err := h.db.WithContext(ctx).First(resume, resume.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reload resume"})
+		return
+	}
+
+	if err := h.setActiveResumeID(ctx, userID, &resume.ID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to mark active resume"})
+		return
+	}
+
+	c.JSON(http.StatusOK, newResumeResponse(*resume))
+}
+
+// DeleteResume 删除指定简历，并尝试回落到最近一份。
+func (h *ResumeHandler) DeleteResume(c *gin.Context) {
+	userID, ok := userIDFromContext(c)
+	if !ok {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	resume, err := h.getResumeForUser(c.Request.Context(), c.Param("id"), userID)
+	if err != nil {
+		switch {
+		case errors.Is(err, errInvalidResumeID):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resume id"})
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "resume not found"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query resume"})
+		}
+		return
+	}
+
+	ctx := c.Request.Context()
+	if err := h.db.WithContext(ctx).Delete(&database.Resume{}, resume.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete resume"})
+		return
+	}
+
+	if err := h.assignLatestResumeAsActive(ctx, userID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update active resume"})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+func (h *ResumeHandler) setActiveResumeID(ctx context.Context, userID uint, resumeID *uint) error {
+	var value any
+	if resumeID != nil {
+		value = *resumeID
+	} else {
+		value = nil
+	}
+	return h.db.WithContext(ctx).Model(&database.User{}).
+		Where("id = ?", userID).
+		Update("active_resume_id", value).Error
+}
+
+func (h *ResumeHandler) assignLatestResumeAsActive(ctx context.Context, userID uint) error {
 	var resume database.Resume
 	err := h.db.WithContext(ctx).
 		Where("user_id = ?", userID).
 		Order("updated_at desc").
 		First(&resume).Error
-
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
-		c.JSON(http.StatusOK, resumeResponse{
-			ID:      0,
-			Title:   defaultResumeTitle,
-			Content: defaultResumeContent(),
-		})
-		return
+		return h.setActiveResumeID(ctx, userID, nil)
 	case err != nil:
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query latest resume"})
-		return
+		return err
 	default:
-		c.JSON(http.StatusOK, newResumeResponse(resume))
+		return h.setActiveResumeID(ctx, userID, &resume.ID)
 	}
+}
+
+func (h *ResumeHandler) findActiveOrLatestResume(ctx context.Context, userID uint) (*database.Resume, error) {
+	var user database.User
+	if err := h.db.WithContext(ctx).
+		Select("id", "active_resume_id").
+		First(&user, userID).Error; err != nil {
+		return nil, err
+	}
+
+	if user.ActiveResumeID != nil {
+		var resume database.Resume
+		if err := h.db.WithContext(ctx).
+			Where("id = ? AND user_id = ?", *user.ActiveResumeID, userID).
+			First(&resume).Error; err == nil {
+			return &resume, nil
+		} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+	}
+
+	var latest database.Resume
+	err := h.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("updated_at desc").
+		First(&latest).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			_ = h.setActiveResumeID(ctx, userID, nil)
+		}
+		return nil, err
+	}
+
+	if err := h.setActiveResumeID(ctx, userID, &latest.ID); err != nil {
+		return nil, err
+	}
+	return &latest, nil
 }
 
 // DownloadResume 将 PDF 生成任务入队并立即返回 202。
@@ -411,8 +633,11 @@ func defaultResumeContent() datatypes.JSON {
 
 func newResumeResponse(resume database.Resume) resumeResponse {
 	return resumeResponse{
-		ID:      resume.ID,
-		Title:   resume.Title,
-		Content: resume.Content,
+		ID:              resume.ID,
+		Title:           resume.Title,
+		Content:         resume.Content,
+		PreviewImageURL: resume.PreviewImageURL,
+		CreatedAt:       resume.CreatedAt,
+		UpdatedAt:       resume.UpdatedAt,
 	}
 }

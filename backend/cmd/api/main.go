@@ -113,7 +113,18 @@ func main() {
 	})
 	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
-	api.RegisterRoutes(router, db, asynqClient, authService, redisClient, slogLogger, storageClient, clamdAddr)
+	api.RegisterRoutes(
+		router,
+		db,
+		asynqClient,
+		authService,
+		redisClient,
+		slogLogger,
+		storageClient,
+		clamdAddr,
+		cfg.API.MaxResumes,
+		cfg.API.MaxTemplates,
+	)
 
 	if err := router.Run(address); err != nil {
 		log.Fatalf("failed to start api server: %v", err)

@@ -21,7 +21,9 @@ type Config struct {
 
 // APIConfig contains HTTP server settings.
 type APIConfig struct {
-	Port int `mapstructure:"port"`
+	Port         int `mapstructure:"port"`
+	MaxResumes   int `mapstructure:"max_resumes"`
+	MaxTemplates int `mapstructure:"max_templates"`
 }
 
 // DatabaseConfig contains connection options for PostgreSQL.
@@ -119,6 +121,8 @@ func MustLoad() *Config {
 
 func setDefaults(v *viper.Viper) {
 	v.SetDefault("api.port", 8080)
+	v.SetDefault("api.max_resumes", 3)
+	v.SetDefault("api.max_templates", 2)
 	v.SetDefault("database.host", "localhost")
 	v.SetDefault("database.port", 5432)
 	v.SetDefault("database.name", "phresume")
@@ -140,6 +144,8 @@ func setDefaults(v *viper.Viper) {
 func bindEnv(v *viper.Viper) error {
 	mappings := map[string]string{
 		"api.port":                "API_PORT",
+		"api.max_resumes":         "API_MAX_RESUMES",
+		"api.max_templates":       "API_MAX_TEMPLATES",
 		"database.host":           "DATABASE_HOST",
 		"database.port":           "DATABASE_PORT",
 		"database.name":           "POSTGRES_DB",
@@ -174,6 +180,12 @@ func bindEnv(v *viper.Viper) error {
 func validate(cfg Config) error {
 	if cfg.API.Port <= 0 {
 		return errors.New("api port must be positive")
+	}
+	if cfg.API.MaxResumes <= 0 {
+		return errors.New("api max resumes must be positive")
+	}
+	if cfg.API.MaxTemplates <= 0 {
+		return errors.New("api max templates must be positive")
 	}
 	if cfg.Database.Host == "" {
 		return errors.New("database host is required")

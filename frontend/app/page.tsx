@@ -17,30 +17,20 @@ import { TextItem } from "@/components/TextItem";
 import { DividerItem } from "@/components/DividerItem";
 import { ImageItem } from "@/components/ImageItem";
 import { TemplatesPanel } from "@/components/TemplatesPanel";
+import { MyResumesPanel } from "@/components/MyResumesPanel";
 import { useAuth } from "@/context/AuthContext";
 import { useAuthFetch } from "@/hooks/useAuthFetch";
-import type {
-  LayoutSettings,
-  ResumeData,
-  ResumeItem,
-  ResumeItemStyle,
-  ResumeLayout,
-} from "@/types/resume";
+import {
+  DEFAULT_LAYOUT_SETTINGS,
+  GRID_COLS,
+  GRID_ROW_HEIGHT,
+  normalizeResumeContent,
+} from "@/utils/resume";
+import type { LayoutSettings, ResumeData, ResumeItem } from "@/types/resume";
 
 type TaskStatus = "idle" | "pending" | "completed";
 
-const GRID_COLS = 24;
-const GRID_ROW_HEIGHT = 10;
 const CANVAS_WIDTH = 794; // 必须与 pdf_template.go (794px) 匹配
-
-const DEFAULT_LAYOUT_SETTINGS: LayoutSettings = {
-  columns: GRID_COLS,
-  row_height_px: GRID_ROW_HEIGHT,
-  accent_color: "#3388ff",
-  font_family: "Arial",
-  font_size_pt: 10,
-  margin_px: 30,
-};
 
 function parseFontSizeValue(value: unknown, fallback: number): number {
   if (typeof value === "number" && !Number.isNaN(value)) {
@@ -55,113 +45,6 @@ function parseFontSizeValue(value: unknown, fallback: number): number {
   }
 
   return fallback;
-}
-
-function normalizeLayoutSettings(
-  raw?: Record<string, unknown>,
-): LayoutSettings {
-  const source = (raw ?? {}) as Record<string, unknown>;
-  const normalized: LayoutSettings = {
-    ...DEFAULT_LAYOUT_SETTINGS,
-    ...(source as Record<string, unknown>),
-  } as LayoutSettings;
-
-  normalized.columns =
-    typeof source["columns"] === "number"
-      ? (source["columns"] as number)
-      : DEFAULT_LAYOUT_SETTINGS.columns;
-  normalized.row_height_px =
-    typeof source["row_height_px"] === "number"
-      ? (source["row_height_px"] as number)
-      : DEFAULT_LAYOUT_SETTINGS.row_height_px;
-  normalized.accent_color =
-    typeof source["accent_color"] === "string"
-      ? (source["accent_color"] as string)
-      : DEFAULT_LAYOUT_SETTINGS.accent_color;
-  normalized.font_family =
-    typeof source["font_family"] === "string"
-      ? (source["font_family"] as string)
-      : DEFAULT_LAYOUT_SETTINGS.font_family;
-  normalized.font_size_pt =
-    typeof source["font_size_pt"] === "number"
-      ? (source["font_size_pt"] as number)
-      : DEFAULT_LAYOUT_SETTINGS.font_size_pt;
-  normalized.margin_px =
-    typeof source["margin_px"] === "number"
-      ? (source["margin_px"] as number)
-      : DEFAULT_LAYOUT_SETTINGS.margin_px;
-
-  return normalized;
-}
-
-function normalizeItemStyle(raw: unknown): ResumeItemStyle {
-  if (!raw || typeof raw !== "object") {
-    return {};
-  }
-
-  const style: ResumeItemStyle = {};
-  Object.entries(raw as Record<string, unknown>).forEach(([key, value]) => {
-    if (typeof value === "string" || typeof value === "number") {
-      style[key] = value;
-    }
-  });
-  return style;
-}
-
-function normalizeResumeContent(content: unknown): ResumeData | null {
-  if (!content) {
-    return null;
-  }
-
-  let parsed: unknown = content;
-  if (typeof parsed === "string") {
-    try {
-      parsed = JSON.parse(parsed);
-    } catch (err) {
-      console.error("简历内容 JSON 解析失败", err);
-      return null;
-    }
-  }
-
-  if (typeof parsed !== "object" || parsed === null) {
-    return null;
-  }
-
-  const draft = parsed as Record<string, unknown> & {
-    items?: unknown;
-    layout_settings?: Record<string, unknown>;
-  };
-
-  const itemsSource = Array.isArray(draft.items) ? draft.items : [];
-  const layoutSettings = normalizeLayoutSettings(draft.layout_settings);
-
-  const items: ResumeItem[] = itemsSource.map((raw, index) => {
-    const item = (raw as Record<string, unknown>) ?? {};
-    const layoutRaw = (item.layout as Record<string, unknown>) ?? {};
-
-    const layout: ResumeLayout = {
-      x: typeof layoutRaw.x === "number" ? layoutRaw.x : 0,
-      y: typeof layoutRaw.y === "number" ? layoutRaw.y : 0,
-      w: typeof layoutRaw.w === "number" ? layoutRaw.w : 4,
-      h: typeof layoutRaw.h === "number" ? layoutRaw.h : 4,
-    };
-
-    const style = normalizeItemStyle(item.style);
-
-    return {
-      ...(item as Omit<ResumeItem, "id" | "layout" | "style" | "content">),
-      id: typeof item.id === "string" ? item.id : `item-${index}`,
-      type: typeof item.type === "string" ? item.type : "text",
-      content: typeof item.content === "string" ? item.content : "",
-      layout,
-      style,
-    };
-  });
-
-  return {
-    layout_settings: layoutSettings,
-    items,
-  };
 }
 
 // 深拷贝工具：用于历史栈快照
@@ -183,6 +66,7 @@ export default function Home() {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [isUploadingAsset, setIsUploadingAsset] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
+  const [isMyResumesOpen, setIsMyResumesOpen] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // 全局撤销/重做（不包含文本框内字符级编辑）
@@ -197,6 +81,18 @@ export default function Home() {
   // 拖拽/缩放标记
   const isDraggingRef = useRef(false);
   const isResizingRef = useRef(false);
+
+  const applyServerResume = useCallback(
+    (payload: { id: number | null; title: string; content: ResumeData | null }) => {
+      setTitle(payload.title);
+      setSavedResumeId(payload.id);
+      setResumeData(payload.content ? deepCloneResumeData(payload.content) : null);
+      setHistoryStack([]);
+      setRedoStack([]);
+      setSelectedItemId(null);
+    },
+    [],
+  );
 
   useEffect(() => {
     resumeDataRef.current = resumeData;
@@ -346,20 +242,19 @@ export default function Home() {
       }
 
       const data = await response.json();
-      setTitle(data?.title ?? "");
-
       const parsedContent = normalizeResumeContent(data?.content);
-      setResumeData(parsedContent);
-      setSavedResumeId(
-        typeof data?.id === "number" && data.id > 0 ? data.id : null,
-      );
+      applyServerResume({
+        id: typeof data?.id === "number" && data.id > 0 ? data.id : null,
+        title: data?.title ?? "",
+        content: parsedContent,
+      });
     } catch (err) {
       console.error("加载最新简历失败", err);
       setError("加载最新简历失败，请稍后重试");
     } finally {
       setIsFetchingResume(false);
     }
-  }, [authFetch, isAuthenticated]);
+  }, [applyServerResume, authFetch, isAuthenticated]);
 
   useEffect(() => {
     if (!isCheckingAuth && isAuthenticated) {
@@ -369,12 +264,6 @@ export default function Home() {
 
   const handleSave = async () => {
     setError(null);
-
-    const trimmedTitle = title.trim();
-    if (!trimmedTitle) {
-      setError("简历标题不能为空");
-      return;
-    }
 
     if (!isAuthenticated) {
       setError("请先登录");
@@ -392,25 +281,62 @@ export default function Home() {
       return;
     }
 
+    let targetTitle = title.trim();
+    let endpoint = "";
+    let method: "POST" | "PUT" = "POST";
+    let resumeIdForUpdate: number | null = savedResumeId;
+
+    if (resumeIdForUpdate === null) {
+      const inputTitle = window.prompt("请输入新简历标题", title || "我的简历");
+      if (inputTitle === null) {
+        return;
+      }
+      targetTitle = inputTitle.trim();
+      if (!targetTitle) {
+        setError("简历标题不能为空");
+        return;
+      }
+      endpoint = "/api/v1/resume";
+      method = "POST";
+    } else {
+      if (!targetTitle) {
+        setError("简历标题不能为空");
+        return;
+      }
+      endpoint = `/api/v1/resume/${resumeIdForUpdate}`;
+      method = "PUT";
+    }
+
     setIsLoading(true);
 
     try {
-      const response = await authFetch("/api/v1/resume", {
-        method: "POST",
+      const response = await authFetch(endpoint, {
+        method,
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ title: trimmedTitle, content: resumeData }),
+        body: JSON.stringify({ title: targetTitle, content: resumeData }),
       });
 
       if (!response.ok) {
+        if (response.status === 403 && resumeIdForUpdate === null) {
+          setError("已达简历保存上限，请升级会员。");
+          return;
+        }
         throw new Error("保存失败");
       }
 
       const data = await response.json();
-      setSavedResumeId(
-        typeof data?.id === "number" && data.id > 0 ? data.id : null,
-      );
+      const normalized = normalizeResumeContent(data?.content);
+      const nextId =
+        typeof data?.id === "number" && data.id > 0
+          ? data.id
+          : resumeIdForUpdate;
+      applyServerResume({
+        id: typeof nextId === "number" ? nextId : null,
+        title: data?.title ?? targetTitle,
+        content: normalized ?? resumeDataRef.current ?? null,
+      });
       setTaskStatus("idle");
     } catch (err) {
       console.error("保存失败", err);
@@ -843,6 +769,27 @@ export default function Home() {
     });
   }, []);
 
+  const handlePanelResumeSelected = useCallback(
+    (payload: { id: number; title: string; content: ResumeData }) => {
+      applyServerResume({
+        id: payload.id,
+        title: payload.title,
+        content: payload.content,
+      });
+      setTaskStatus("idle");
+    },
+    [applyServerResume],
+  );
+
+  const handlePanelResumeDeleted = useCallback(
+    (deletedId: number) => {
+      if (savedResumeId === deletedId) {
+        fetchLatestResume();
+      }
+    },
+    [fetchLatestResume, savedResumeId],
+  );
+
   // 拖拽/缩放交互：开始时拍快照，结束时如有变动则把起始快照推入历史
   const simplifiedLayouts = useCallback((data: ResumeData | null) => {
     if (!data) return [];
@@ -1141,6 +1088,13 @@ export default function Home() {
         </button>
         <button
           type="button"
+          onClick={() => setIsMyResumesOpen(true)}
+          className="rounded-md border border-zinc-300 px-6 py-2 text-sm font-medium text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400 dark:border-zinc-600 dark:text-zinc-100 dark:hover:bg-zinc-800"
+        >
+          我的简历
+        </button>
+        <button
+          type="button"
           onClick={handleSave}
           disabled={isLoading || isFetchingResume}
           className="rounded-md bg-zinc-900 px-6 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
@@ -1181,6 +1135,14 @@ export default function Home() {
         accessToken={accessToken}
         currentResumeData={resumeData}
         onApply={replaceResumeData}
+      />
+      <MyResumesPanel
+        isOpen={isMyResumesOpen}
+        onClose={() => setIsMyResumesOpen(false)}
+        accessToken={accessToken}
+        currentResumeData={resumeData}
+        onResumeSelected={handlePanelResumeSelected}
+        onResumeDeleted={handlePanelResumeDeleted}
       />
     </div>
   );
