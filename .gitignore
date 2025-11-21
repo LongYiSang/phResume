@@ -38,3 +38,6 @@ tmp/
 /backend/test.pdf
 /backend/internal/config/config_test.go
 /backend/api
+
+#doc
+/项目规划/Example/

@@ -1,6 +1,7 @@
 @import "react-grid-layout/css/styles.css";
 @import "react-resizable/css/styles.css";
 @import "tailwindcss";
+/* Web fonts are loaded via next/font in layout.tsx to avoid CSS import ordering issues */
 @plugin './hero.ts';
 @source '../node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}';
 
@@ -14,13 +15,27 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: Nunito, var(--font-geist-sans), system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-display: Quicksand, Nunito, var(--font-geist-sans), system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
   --color-primary: #F8B4D9;
   --color-secondary: #B4E4FF;
   --color-accent: #D8B4FE;
   --color-success: #B4FEB4;
   --radius-large: 1rem;
+  --color-kawaii-bg: #fff1f2;
+  --color-kawaii-card: #ffffff;
+  --color-kawaii-text: #4c1d95;
+  --color-kawaii-pink: #fb7185;
+  --color-kawaii-pinkLight: #fce7f3;
+  --color-kawaii-purple: #a78bfa;
+  --color-kawaii-purpleLight: #ede9fe;
+  --color-kawaii-blue: #60a5fa;
+  --color-kawaii-mint: #34d399;
+  --color-kawaii-yellow: #fbbf24;
+  --shadow-soft: 0 10px 40px -10px rgba(251, 113, 133, 0.15);
+  --shadow-pop: 0 4px 0px 0px rgba(0,0,0,0.1);
+  --shadow-pop-hover: 0 6px 0px 0px rgba(0,0,0,0.1);
+  --shadow-card: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -31,10 +46,19 @@
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-kawaii-bg);
+  background-image: radial-gradient(#fda4af 1.5px, transparent 1.5px), radial-gradient(#fda4af 1.5px, var(--color-kawaii-bg) 1.5px);
+  background-size: 30px 30px;
+  background-position: 0 0, 15px 15px;
+  color: var(--color-kawaii-text);
+  font-family: var(--font-sans);
 }
+
+/* Custom Scrollbar */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-kawaii-pinkLight); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #f472b6; }
 
 .text-item-editor,
 .text-item-readonly {
@@ -49,6 +73,22 @@ body {
   color: inherit;
   font-family: inherit;
 }
+
+/* Kawaii utility classes */
+.text-kawaii-text { color: var(--color-kawaii-text); }
+.text-kawaii-purple { color: var(--color-kawaii-purple); }
+.text-kawaii-blue { color: var(--color-kawaii-blue); }
+.text-kawaii-mint { color: var(--color-kawaii-mint); }
+.text-kawaii-yellow { color: var(--color-kawaii-yellow); }
+.bg-kawaii-pink { background-color: var(--color-kawaii-pink); }
+.bg-kawaii-pinkLight { background-color: var(--color-kawaii-pinkLight); }
+.bg-kawaii-purpleLight { background-color: var(--color-kawaii-purpleLight); }
+.border-kawaii-pinkLight { border-color: var(--color-kawaii-pinkLight); }
+.font-display { font-family: var(--font-display); }
+.shadow-soft { box-shadow: var(--shadow-soft); }
+.shadow-pop { box-shadow: var(--shadow-pop); }
+.shadow-pop-hover { box-shadow: var(--shadow-pop-hover); }
+.shadow-card { box-shadow: var(--shadow-card); }
 
 .text-item-editor p,
 .text-item-readonly p {

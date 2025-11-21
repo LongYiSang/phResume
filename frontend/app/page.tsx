@@ -12,28 +12,35 @@ import { useRouter } from "next/navigation";
 import RGL, { type Layout } from "react-grid-layout";
 import { v4 as uuidv4 } from "uuid";
 import { PageContainer } from "@/components/PageContainer";
-import { StylePanel } from "@/components/StylePanel";
+import Inspector from "@/components/Inspector";
+import Dock from "@/components/Dock";
 import { TextItem } from "@/components/TextItem";
 import { DividerItem } from "@/components/DividerItem";
 import { ImageItem } from "@/components/ImageItem";
+import { TopToolbar } from "@/components/editor/TopToolbar";
 import { TemplatesPanel } from "@/components/TemplatesPanel";
 import { MyResumesPanel } from "@/components/MyResumesPanel";
-import { TopToolbar } from "@/components/editor/TopToolbar";
 import { useAuth } from "@/context/AuthContext";
 import { ActiveEditorProvider } from "@/context/ActiveEditorContext";
 import { useAuthFetch } from "@/hooks/useAuthFetch";
-import { Button, Card } from "@heroui/react";
+import { Button } from "@heroui/react";
 import {
   DEFAULT_LAYOUT_SETTINGS,
   GRID_COLS,
   GRID_ROW_HEIGHT,
   normalizeResumeContent,
 } from "@/utils/resume";
-import type { LayoutSettings, ResumeData, ResumeItem } from "@/types/resume";
+import type {
+  LayoutSettings,
+  ResumeData,
+  ResumeItem,
+  ResumeItemStyle,
+} from "@/types/resume";
 
 type TaskStatus = "idle" | "pending" | "completed";
 
 const CANVAS_WIDTH = 794; // 必须与 pdf_template.go (794px) 匹配
+const CANVAS_HEIGHT = Math.round((CANVAS_WIDTH * 297) / 210);
 
 function parseFontSizeValue(value: unknown, fallback: number): number {
   if (typeof value === "number" && !Number.isNaN(value)) {
@@ -48,6 +55,105 @@ function parseFontSizeValue(value: unknown, fallback: number): number {
   }
 
   return fallback;
+}
+
+const DEFAULT_DIVIDER_THICKNESS = 2;
+
+function extractDividerThickness(style?: ResumeItemStyle): number | null {
+  if (!style) {
+    return null;
+  }
+  const borderTop = style.borderTop;
+  if (typeof borderTop === "string") {
+    const match = borderTop.match(/([\d.]+)px/);
+    if (match) {
+      const parsed = parseFloat(match[1]);
+      if (!Number.isNaN(parsed)) {
+        return parsed;
+      }
+    }
+  }
+  const borderWidth = style.borderWidth;
+  if (typeof borderWidth === "number" && !Number.isNaN(borderWidth)) {
+    return borderWidth;
+  }
+  if (typeof borderWidth === "string") {
+    const parsed = parseFloat(borderWidth);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+function extractDividerColor(style?: ResumeItemStyle): string | null {
+  if (!style) {
+    return null;
+  }
+  const borderTop = style.borderTop;
+  if (typeof borderTop === "string") {
+    const colorMatches = borderTop.match(
+      /(#[0-9a-fA-F]{3,8}|rgba?\([^\)]+\)|hsla?\([^\)]+\)|[a-zA-Z]+)/g,
+    );
+    if (colorMatches && colorMatches.length > 0) {
+      const filtered = colorMatches.filter(
+        (token) =>
+          !["solid", "dashed", "double", "none"].includes(token.toLowerCase()),
+      );
+      if (filtered.length > 0) {
+        return filtered[filtered.length - 1];
+      }
+    }
+  }
+  if (typeof style.borderColor === "string") {
+    return style.borderColor;
+  }
+  if (typeof style.color === "string") {
+    return style.color;
+  }
+  return null;
+}
+
+function parseScaleFromTransform(transformValue?: unknown): number | null {
+  if (typeof transformValue !== "string") {
+    return null;
+  }
+  const match = transformValue.match(/scale\(([^)]+)\)/i);
+  if (!match) {
+    return null;
+  }
+  const parsed = parseFloat(match[1]);
+  if (Number.isNaN(parsed)) {
+    return null;
+  }
+  return parsed;
+}
+
+function parsePositionPercent(
+  value?: unknown,
+): { x: number; y: number } | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const parts = value.trim().split(/\s+/);
+  if (parts.length < 2) {
+    return null;
+  }
+  const parsePart = (part: string) => {
+    if (part.endsWith("%")) {
+      const num = parseFloat(part.slice(0, -1));
+      if (!Number.isNaN(num)) {
+        return Math.max(0, Math.min(100, num));
+      }
+    }
+    return null;
+  };
+  const x = parsePart(parts[0]);
+  const y = parsePart(parts[1]);
+  if (x === null || y === null) {
+    return null;
+  }
+  return { x, y };
 }
 
 // 深拷贝工具：用于历史栈快照
@@ -70,6 +176,7 @@ export default function Home() {
   const [isUploadingAsset, setIsUploadingAsset] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [isMyResumesOpen, setIsMyResumesOpen] = useState(false);
+  const [zoom, setZoom] = useState(1);
   const socketRef = useRef<WebSocket | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // 全局撤销/重做（不包含文本框内字符级编辑）
@@ -504,12 +611,64 @@ export default function Home() {
     if (!selectedItem || !resumeData?.layout_settings) {
       return null;
     }
+    if (selectedItem.type === "divider") {
+      return (
+        extractDividerColor(selectedItem.style) ??
+        resumeData.layout_settings.accent_color
+      );
+    }
     const rawColor = selectedItem.style?.color;
     if (typeof rawColor === "string" && rawColor.trim().length > 0) {
       return rawColor;
     }
     return resumeData.layout_settings.accent_color;
   }, [selectedItem, resumeData?.layout_settings]);
+
+  const selectedItemFontFamily = useMemo(() => {
+    if (
+      !selectedItem ||
+      selectedItem.type !== "text" ||
+      !resumeData?.layout_settings
+    ) {
+      return null;
+    }
+    const rawFamily = selectedItem.style?.fontFamily;
+    if (typeof rawFamily === "string" && rawFamily.trim().length > 0) {
+      return rawFamily;
+    }
+    return resumeData.layout_settings.font_family;
+  }, [selectedItem, resumeData?.layout_settings]);
+
+  const selectedDividerThickness = useMemo(() => {
+    if (!selectedItem || selectedItem.type !== "divider") {
+      return null;
+    }
+    return extractDividerThickness(selectedItem.style) ?? DEFAULT_DIVIDER_THICKNESS;
+  }, [selectedItem]);
+
+  const selectedImageScalePercent = useMemo(() => {
+    if (!selectedItem || selectedItem.type !== "image") {
+      return null;
+    }
+    const scale = parseScaleFromTransform(selectedItem.style?.transform);
+    if (!scale) {
+      return 100;
+    }
+    return Math.round(scale * 100);
+  }, [selectedItem]);
+
+  const selectedImageFocus = useMemo(() => {
+    if (!selectedItem || selectedItem.type !== "image") {
+      return null;
+    }
+    return (
+      parsePositionPercent(selectedItem.style?.objectPosition) ??
+      parsePositionPercent((selectedItem.style as Record<string, unknown>)?.transformOrigin) ?? {
+        x: 50,
+        y: 50,
+      }
+    );
+  }, [selectedItem]);
 
   const handleItemFontSizeChange = useCallback(
     (newSizePt: number) => {
@@ -536,6 +695,73 @@ export default function Home() {
     (newColor: string) => {
       if (!selectedItemId) return;
       withHistory((prev) => {
+        const accent =
+          prev.layout_settings?.accent_color ?? DEFAULT_LAYOUT_SETTINGS.accent_color;
+        const safeColor = newColor || accent;
+        const updatedItems = prev.items.map((item) => {
+          if (item.id !== selectedItemId) {
+            return item;
+          }
+          if (item.type === "divider") {
+            const nextThickness =
+              extractDividerThickness(item.style) ?? DEFAULT_DIVIDER_THICKNESS;
+            return {
+              ...item,
+              style: {
+                ...(item.style ?? {}),
+                borderTop: `${nextThickness}px solid ${safeColor}`,
+                borderColor: safeColor,
+                color: safeColor,
+              },
+            };
+          }
+          return {
+            ...item,
+            style: {
+              ...(item.style ?? {}),
+              color: safeColor,
+            },
+          };
+        });
+        return { ...prev, items: updatedItems };
+      });
+    },
+    [selectedItemId, withHistory],
+  );
+
+  const handleDividerThicknessChange = useCallback(
+    (nextThickness: number) => {
+      if (!selectedItemId) return;
+      const clamped = Math.max(1, Math.min(10, Math.round(nextThickness)));
+      withHistory((prev) => {
+        const accent =
+          prev.layout_settings?.accent_color ?? DEFAULT_LAYOUT_SETTINGS.accent_color;
+        const updatedItems = prev.items.map((item) => {
+          if (item.id !== selectedItemId || item.type !== "divider") {
+            return item;
+          }
+          const currentColor =
+            extractDividerColor(item.style) ?? accent;
+          return {
+            ...item,
+            style: {
+              ...(item.style ?? {}),
+              borderTop: `${clamped}px solid ${currentColor}`,
+              borderColor: currentColor,
+              color: currentColor,
+            },
+          };
+        });
+        return { ...prev, items: updatedItems };
+      });
+    },
+    [selectedItemId, withHistory],
+  );
+
+  const handleItemFontFamilyChange = useCallback(
+    (fontFamily: string) => {
+      if (!selectedItemId) return;
+      withHistory((prev) => {
         const updatedItems = prev.items.map((item) =>
           item.id !== selectedItemId
             ? item
@@ -543,15 +769,7 @@ export default function Home() {
                 ...item,
                 style: {
                   ...(item.style ?? {}),
-                  color: item.type === "divider" ? (item.style?.color ?? undefined) : newColor,
-                  borderColor:
-                    item.type === "divider"
-                      ? newColor
-                      : (item.style as any)?.borderColor,
-                  borderTop:
-                    item.type === "divider" && typeof item.style?.borderTop === "string"
-                      ? item.style?.borderTop.replace(/(solid\s*)(#[0-9a-fA-F]{3,8}|rgb\([^\)]+\)|hsl\([^\)]+\))/i, `$1${newColor}`)
-                      : item.style?.borderTop,
+                  fontFamily,
                 },
               },
         );
@@ -560,6 +778,81 @@ export default function Home() {
     },
     [selectedItemId, withHistory],
   );
+
+  const handleImageZoomChange = useCallback(
+    (scale: number) => {
+      if (!selectedItemId) return;
+      const nextScale = Math.max(0.5, Math.min(2, scale));
+      withHistory((prev) => {
+        const updated = prev.items.map((item) => {
+          if (item.id !== selectedItemId || item.type !== "image") {
+            return item;
+          }
+          const existingOrigin =
+            typeof item.style?.transformOrigin === "string"
+              ? item.style.transformOrigin
+              : typeof item.style?.objectPosition === "string"
+                ? item.style.objectPosition
+                : "50% 50%";
+          return {
+            ...item,
+            style: {
+              ...(item.style ?? {}),
+              transform: `scale(${nextScale})`,
+              transformOrigin: existingOrigin,
+            },
+          };
+        });
+        return { ...prev, items: updated };
+      });
+    },
+    [selectedItemId, withHistory],
+  );
+
+  const handleImageFocusChange = useCallback(
+    (xPercent: number, yPercent: number) => {
+      if (!selectedItemId) return;
+      const nextX = Math.max(0, Math.min(100, Math.round(xPercent)));
+      const nextY = Math.max(0, Math.min(100, Math.round(yPercent)));
+      const nextValue = `${nextX}% ${nextY}%`;
+      withHistory((prev) => {
+        const updated = prev.items.map((item) =>
+          item.id !== selectedItemId || item.type !== "image"
+            ? item
+            : {
+                ...item,
+                style: {
+                  ...(item.style ?? {}),
+                  objectPosition: nextValue,
+                  transformOrigin: nextValue,
+                },
+              },
+        );
+        return { ...prev, items: updated };
+      });
+    },
+    [selectedItemId, withHistory],
+  );
+
+  const handleImageZoomReset = useCallback(() => {
+    if (!selectedItemId) return;
+    withHistory((prev) => {
+      const updated = prev.items.map((item) =>
+        item.id !== selectedItemId || item.type !== "image"
+          ? item
+          : {
+              ...item,
+              style: {
+                ...(item.style ?? {}),
+                transform: "scale(1)",
+                objectPosition: "50% 50%",
+                transformOrigin: "50% 50%",
+              },
+            },
+      );
+      return { ...prev, items: updated };
+    });
+  }, [selectedItemId, withHistory]);
 
   // 计算居中插入位置（x 水平居中，y 取当前占用高度的中位数）
   function computeCenteredPosition(prev: ResumeData, w: number, h: number) {
@@ -863,15 +1156,8 @@ export default function Home() {
   return (
     <ActiveEditorProvider>
       <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-6 py-12">
-        <TopToolbar />
-        <Card className="rounded-3xl bg-white/70 backdrop-blur-md shadow-lg">
-        <div className="px-6 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-semibold text-zinc-950">简历编辑器</h1>
-            <p className="mt-1 text-sm text-zinc-600">加载并编辑结构化 JSON 布局，保存后可生成 PDF。</p>
-          </div>
-        </div>
-      </Card>
+        
+        
 
       {isFetchingResume && (
         <div className="text-sm text-zinc-500 dark:text-zinc-400">
@@ -879,136 +1165,93 @@ export default function Home() {
         </div>
       )}
 
-      <input
-        className="w-full rounded-md border border-zinc-200 bg-white p-4 text-base text-zinc-900 shadow-sm focus:border-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-        value={title}
-        onChange={(event) => setTitle(event.target.value)}
-        placeholder="请输入简历标题"
-      />
+      
 
-      <div className="flex flex-col gap-6 lg:flex-row">
-        <div className="lg:w-80 space-y-4">
-          <div>
-            {resumeData ? (
-              <StylePanel
-                settings={resumeData.layout_settings}
-                onSettingsChange={handleSettingsChange}
-                selectedItemFontSize={selectedItemFontSize}
-                onSelectedItemFontSizeChange={handleItemFontSizeChange}
-                selectedItemColor={selectedItemColor}
-                onSelectedItemColorChange={handleItemColorChange}
-                onToggleBold={() => {
-                  if (!selectedItemId) return;
-                  withHistory((prev) => {
-                    const updated = prev.items.map((it) =>
-                      it.id !== selectedItemId
-                        ? it
-                        : {
-                            ...it,
-                            style: {
-                              ...(it.style ?? {}),
-                              fontWeight:
-                                (it.style as any)?.fontWeight === "bold" ? "normal" : "bold",
-                            },
-                          },
-                    );
-                    return { ...prev, items: updated };
-                  });
-                }}
-                onToggleItalic={() => {
-                  if (!selectedItemId) return;
-                  withHistory((prev) => {
-                    const updated = prev.items.map((it) =>
-                      it.id !== selectedItemId
-                        ? it
-                        : {
-                            ...it,
-                            style: {
-                              ...(it.style ?? {}),
-                              fontStyle:
-                                (it.style as any)?.fontStyle === "italic" ? "normal" : "italic",
-                            },
-                          },
-                    );
-                    return { ...prev, items: updated };
-                  });
-                }}
-                onToggleUnderline={() => {
-                  if (!selectedItemId) return;
-                  withHistory((prev) => {
-                    const updated = prev.items.map((it) => {
-                      if (it.id !== selectedItemId) return it;
-                      const curr = String((it.style as any)?.textDecoration ?? "none");
-                      const next = curr.includes("underline") ? "none" : "underline";
-                      return {
-                        ...it,
-                        style: {
-                          ...(it.style ?? {}),
-                          textDecoration: next,
-                        },
-                      };
-                    });
-                    return { ...prev, items: updated };
-                  });
-                }}
-              />
-            ) : (
-              <div className="rounded-xl border border-dashed border-zinc-300 bg-white/70 p-4 text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-400">
-                {isFetchingResume ? "正在加载样式配置..." : "暂无样式可编辑"}
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
-              元素库
-            </h2>
-            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-              添加新的文字框、分割线或图片模块，随时调整布局。
-            </p>
-
-            <div className="mt-4 flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={handleAddText}
-                disabled={!resumeData}
-                className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800"
-              >
-                添加文字框
-              </button>
-              <button
-                type="button"
-                onClick={handleAddDivider}
-                disabled={!resumeData}
-                className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800"
-              >
-                添加分割线
-              </button>
-              <button
-                type="button"
-                onClick={handleAddImageClick}
-                disabled={!resumeData || isUploadingAsset}
-                className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800"
-              >
-                {isUploadingAsset ? "图片上传中..." : "添加图片"}
-              </button>
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleImageUpload}
-            />
-          </div>
+      <div className="relative">
+        <div className="fixed left-6 top-1/2 -translate-y-1/2 z-40">
+          <Dock
+            onAddText={handleAddText}
+            onAddImage={handleAddImageClick}
+            onAddDivider={handleAddDivider}
+            onOpenTemplates={() => setIsTemplatesOpen(true)}
+            onOpenMyResumes={() => setIsMyResumesOpen(true)}
+            disabled={!resumeData}
+          />
         </div>
 
-        <div className="flex-1">
-          <div className="w-full rounded-md border border-dashed border-zinc-300 bg-zinc-50/60 p-4">
+        <div className="fixed right-6 top-1/2 -translate-y-1/2 z-40 w-80 max-h-[90vh]">
+          {resumeData && (
+            <Inspector
+              title={title}
+              onUpdateTitle={setTitle}
+              onSave={handleSave}
+              onDownload={handleDownload}
+              historyCanUndo={historyStack.length > 0}
+              historyCanRedo={redoStack.length > 0}
+              onUndo={handleUndo}
+              onRedo={handleRedo}
+              styleSettings={resumeData.layout_settings}
+              onStyleSettingsChange={handleSettingsChange}
+              selectedItemType={selectedItem?.type ?? null}
+              selectedItemFontSize={selectedItem?.type === "text" ? selectedItemFontSize : null}
+              onSelectedItemFontSizeChange={handleItemFontSizeChange}
+              selectedItemColor={
+                selectedItem?.type === "text" || selectedItem?.type === "divider"
+                  ? selectedItemColor
+                  : null
+              }
+              onSelectedItemColorChange={handleItemColorChange}
+              selectedItemFontFamily={
+                selectedItem?.type === "text" ? selectedItemFontFamily : null
+              }
+              onSelectedItemFontFamilyChange={handleItemFontFamilyChange}
+              selectedDividerThickness={
+                selectedItem?.type === "divider" ? selectedDividerThickness : null
+              }
+              onDividerThicknessChange={handleDividerThicknessChange}
+              selectedItemContent={selectedItem?.type === "image" ? selectedItem.content : null}
+              selectedImageScalePercent={
+                selectedItem?.type === "image" ? selectedImageScalePercent : null
+              }
+              selectedImageFocus={
+                selectedItem?.type === "image" ? selectedImageFocus : null
+              }
+              onImageZoomChange={handleImageZoomChange}
+              onImageFocusChange={handleImageFocusChange}
+              onImageZoomReset={handleImageZoomReset}
+              onFormatText={(type) => {
+                if (!selectedItemId) return;
+                if (!type) return;
+              }}
+              onAlignElement={(format) => {
+                if (!selectedItemId) return;
+                if (!format) return;
+              }}
+              onListToggle={(type) => {
+                if (!selectedItemId) return;
+                if (!type) return;
+              }}
+              zoom={zoom}
+              setZoom={setZoom}
+            />
+          )}
+        </div>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleImageUpload}
+        />
+
+        <div className="min-h-screen flex items-start justify-center px-[120px]">
+          <div className="w-full max-w-5xl rounded-[32px] border border-white/60 bg-white/60 p-6 shadow-card backdrop-blur-xl">
             {resumeData ? (
               <div className="overflow-x-auto">
                 <PageContainer
-                  width={CANVAS_WIDTH}
+                  width={Math.round(CANVAS_WIDTH * zoom)}
+                  height={Math.round(CANVAS_HEIGHT * zoom)}
                   style={{
                     fontFamily: resumeData.layout_settings.font_family,
                     fontSize: `${resumeData.layout_settings.font_size_pt}pt`,
@@ -1025,7 +1268,9 @@ export default function Home() {
                     preventCollision
                     draggableHandle=".rgl-drag-handle"
                     draggableCancel=".text-item-editor"
-                    width={CANVAS_WIDTH}
+                    width={Math.round(CANVAS_WIDTH * zoom)}
+                    autoSize={false}
+                    style={{ height: Math.round(CANVAS_HEIGHT * zoom) }}
                     margin={[0, 0]}
                     containerPadding={[0, 0]}
                     onLayoutChange={handleLayoutChange}
@@ -1134,14 +1379,7 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-4">
-        <Button variant="bordered" className="rounded-2xl" isDisabled={historyStack.length === 0} onPress={handleUndo}>撤销</Button>
-        <Button variant="bordered" className="rounded-2xl" isDisabled={redoStack.length === 0} onPress={handleRedo}>重做</Button>
-        <Button variant="bordered" className="rounded-2xl" onPress={() => setIsTemplatesOpen(true)}>模板</Button>
-        <Button variant="bordered" className="rounded-2xl" onPress={() => setIsMyResumesOpen(true)}>我的简历</Button>
-        <Button color="primary" className="rounded-2xl" isDisabled={isLoading || isFetchingResume} onPress={handleSave}>{isLoading ? "保存中..." : "保存简历"}</Button>
-        <Button variant="bordered" className="rounded-2xl" isDisabled={savedResumeId === null || taskStatus === "pending"} onPress={handleDownload}>{renderDownloadLabel()}</Button>
-      </div>
+      
 
       {savedResumeId !== null && (
         <div className="text-sm text-zinc-500 dark:text-zinc-400">

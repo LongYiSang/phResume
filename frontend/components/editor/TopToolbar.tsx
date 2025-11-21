@@ -23,7 +23,6 @@ import {
   REDO_COMMAND,
   SELECTION_CHANGE_COMMAND,
   UNDO_COMMAND,
-  type LexicalEditor,
   type TextFormatType,
 } from "lexical";
 import {
@@ -31,12 +30,7 @@ import {
   $isHeadingNode,
   type HeadingTagType,
 } from "@lexical/rich-text";
-import {
-  $isListNode,
-  INSERT_ORDERED_LIST_COMMAND,
-  INSERT_UNORDERED_LIST_COMMAND,
-  REMOVE_LIST_COMMAND,
-} from "@lexical/list";
+import { $isListNode } from "@lexical/list";
 import { $setBlocksType } from "@lexical/selection";
 import { mergeRegister } from "@lexical/utils";
 import {
@@ -62,6 +56,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Key } from "@react-types/shared";
+import { toggleListCommand } from "@/utils/lexical";
 
 type BlockType = "paragraph" | HeadingTagType | "bullet" | "number" | "check";
 type HeadingOption = "paragraph" | HeadingTagType;
@@ -175,8 +170,6 @@ export function TopToolbar() {
 
   useEffect(() => {
     if (!activeEditor) {
-      setFormatState(DEFAULT_FORMAT_STATE);
-      setHistoryState(DEFAULT_HISTORY_STATE);
       return;
     }
 
@@ -222,7 +215,7 @@ export function TopToolbar() {
       formatState.blockType === "bullet" ||
       formatState.blockType === "number"
     ) {
-      return "paragraph";
+      return "paragraph" as HeadingOption;
     }
     return formatState.blockType;
   }, [formatState.blockType]);
@@ -276,19 +269,9 @@ export function TopToolbar() {
   const handleListToggle = useCallback(
     (type: "bullet" | "number") => {
       if (!activeEditor) return;
-      if (formatState.blockType === type) {
-        activeEditor.dispatchCommand(REMOVE_LIST_COMMAND, undefined);
-      } else {
-        activeEditor.dispatchCommand(
-          type === "bullet"
-            ? INSERT_UNORDERED_LIST_COMMAND
-            : INSERT_ORDERED_LIST_COMMAND,
-          undefined,
-        );
-      }
-      activeEditor.focus();
+      toggleListCommand(activeEditor, type);
     },
-    [activeEditor, formatState.blockType],
+    [activeEditor],
   );
 
   const handleAlignment = useCallback(

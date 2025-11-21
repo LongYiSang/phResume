@@ -1,41 +1,61 @@
 "use client";
 
-import type { ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent } from "react";
 import type { LayoutSettings } from "@/types/resume";
-import { Card, Select, SelectItem, Slider, Input, Switch, type Selection } from "@heroui/react";
+import { Card, Select, SelectItem, Slider, Input, Button, type Selection } from "@heroui/react";
 
 type StylePanelProps = {
   settings: LayoutSettings;
   onSettingsChange: (newSettings: LayoutSettings) => void;
+  selectedItemType: string | null;
   selectedItemFontSize: number | null;
   onSelectedItemFontSizeChange: (value: number) => void;
   selectedItemColor: string | null;
   onSelectedItemColorChange: (value: string) => void;
-  onToggleBold?: () => void;
-  onToggleItalic?: () => void;
-  onToggleUnderline?: () => void;
+  selectedItemContent?: string | null;
+  selectedItemFontFamily?: string | null;
+  selectedDividerThickness?: number | null;
+  selectedImageScalePercent?: number | null;
+  selectedImageFocus?: { x: number; y: number } | null;
+  onSelectedItemFontFamilyChange?: (value: string) => void;
+  onDividerThicknessChange?: (value: number) => void;
+  onFormatText?: (type: "bold" | "italic" | "underline") => void;
+  onAlignElement?: (format: "left" | "center" | "right") => void;
+  onListToggle?: (type: "bullet" | "number") => void;
+  onImageZoomChange?: (scale: number) => void;
+  onImageFocusChange?: (xPercent: number, yPercent: number) => void;
+  onImageZoomReset?: () => void;
 };
 
 const FONT_OPTIONS = [
-  "Arial",
-  "Helvetica",
-  "Roboto",
-  "Georgia",
-  "Times New Roman",
-  "PingFang SC",
-  "Noto Sans SC",
+  "DejaVu Sans",
+  "DejaVu Serif",
+  "FreeSans",
+  "FreeSerif",
+  "WenQuanYi Zen Hei",
 ];
 
 export function StylePanel({
   settings,
   onSettingsChange,
+  selectedItemType,
   selectedItemFontSize,
   onSelectedItemFontSizeChange,
   selectedItemColor,
   onSelectedItemColorChange,
-  onToggleBold,
-  onToggleItalic,
-  onToggleUnderline,
+  selectedItemContent,
+  selectedItemFontFamily,
+  selectedDividerThickness,
+  selectedImageScalePercent,
+  selectedImageFocus,
+  onSelectedItemFontFamilyChange,
+  onDividerThicknessChange,
+  onFormatText,
+  onAlignElement,
+  onListToggle,
+  onImageZoomChange,
+  onImageFocusChange,
+  onImageZoomReset,
 }: StylePanelProps) {
   const handleChange = (
     key: "accent_color" | "font_family" | "font_size_pt",
@@ -51,7 +71,12 @@ export function StylePanel({
   const handleFontSelectionChange = (keys: Selection) => {
     if (keys === "all") return;
     const currentKey = (keys as unknown as { currentKey?: string }).currentKey;
-    const val = currentKey ?? Array.from(keys as Set<string>)[0] ?? settings.font_family;
+    const val =
+      currentKey ?? Array.from(keys as Set<string>)[0] ?? settings.font_family;
+    if (onSelectedItemFontFamilyChange) {
+      onSelectedItemFontFamilyChange(val);
+      return;
+    }
     handleChange("font_family", val);
   };
 
@@ -63,66 +88,249 @@ export function StylePanel({
     onSelectedItemColorChange(event.target.value);
   };
 
+  const isTextSelected =
+    selectedItemType === "text" && selectedItemFontSize !== null && selectedItemColor !== null;
+  const isDividerSelected = selectedItemType === "divider";
+  const isImageSelected = selectedItemType === "image" && typeof selectedItemContent === "string" && selectedItemContent.length > 0;
+  const currentColor = selectedItemColor ?? settings.accent_color ?? "#1f2937";
+  const dividerThicknessValue = selectedDividerThickness ?? 2;
+  const imageScalePercent = selectedImageScalePercent ?? 100;
+  const imageFocus = selectedImageFocus ?? { x: 50, y: 50 };
+  const presetColors = [
+    "#000000",
+    "#fb7185",
+    "#a78bfa",
+    "#60a5fa",
+    "#34d399",
+    "#fbbf24",
+    "#ef4444",
+    "#6b7280",
+  ];
+  const handleRGBChange = (event: ChangeEvent<HTMLInputElement>, channel: "r" | "g" | "b") => {
+    const curr = currentColor;
+    const m = curr.match(/rgb\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)\)/i);
+    let r = m ? parseInt(m[1]) : 0;
+    let g = m ? parseInt(m[2]) : 0;
+    let b = m ? parseInt(m[3]) : 0;
+    const val = Math.max(0, Math.min(255, parseInt(event.target.value || "0")));
+    if (channel === "r") r = val;
+    if (channel === "g") g = val;
+    if (channel === "b") b = val;
+    onSelectedItemColorChange?.(`rgb(${r}, ${g}, ${b})`);
+  };
+
+  // 图片预览与焦点拖拽
+  const [imagePreviewURL, setImagePreviewURL] = useState<string | null>(null);
+  const [isDraggingFocus, setIsDraggingFocus] = useState(false);
+  const previewRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    async function fetchURL() {
+      if (!isImageSelected || !selectedItemContent) {
+        setImagePreviewURL(null);
+        return;
+      }
+      try {
+        const resp = await fetch(`/api/v1/assets/view?key=${encodeURIComponent(selectedItemContent)}`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (mounted) setImagePreviewURL(typeof data?.url === "string" ? data.url : null);
+      } catch {
+        if (mounted) setImagePreviewURL(null);
+      }
+    }
+    fetchURL();
+    return () => { mounted = false; };
+  }, [isImageSelected, selectedItemContent]);
+
+  const handlePreviewMouseDown = (e: MouseEvent<HTMLDivElement>) => {
+    if (!previewRef.current) return;
+    setIsDraggingFocus(true);
+    const rect = previewRef.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * 100;
+    const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height)) * 100;
+    onImageFocusChange?.(Math.round(x), Math.round(y));
+  };
+  const handlePreviewMouseMove = (e: MouseEvent<HTMLDivElement>) => {
+    if (!isDraggingFocus || !previewRef.current) return;
+    const rect = previewRef.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * 100;
+    const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height)) * 100;
+    onImageFocusChange?.(Math.round(x), Math.round(y));
+  };
+  const handlePreviewMouseUp = () => setIsDraggingFocus(false);
+
   return (
     <Card className="rounded-3xl bg-white/70 backdrop-blur-md shadow-lg">
       <div className="p-4">
         <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">样式设置</h2>
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">选择模块后可单独调整其字号与颜色。</p>
 
         <div className="mt-4 space-y-5 text-sm">
-          <div className="flex flex-col gap-2">
-            <Select
-              label="字体"
-              selectedKeys={new Set([settings.font_family]) as Selection}
-              onSelectionChange={handleFontSelectionChange}
-              className="rounded-2xl"
-            >
-              {FONT_OPTIONS.map((font) => (
-                <SelectItem key={font}>
-                  {font}
-                </SelectItem>
-              ))}
-            </Select>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Slider
-              label="当前模块字号（pt）"
-              minValue={8}
-              maxValue={32}
-              step={1}
-              value={selectedItemFontSize ?? settings.font_size_pt}
-              isDisabled={selectedItemFontSize === null}
-              onChange={(val) =>
-                typeof val === "number" && onSelectedItemFontSizeChange(val)
-              }
-            />
-            <div className="text-xs text-zinc-500 dark:text-zinc-400">
-              {selectedItemFontSize === null
-                ? "点击右侧模块后可调整该模块字号"
-                : `当前：${selectedItemFontSize} pt`}
+          {isTextSelected ? (
+            <div className="flex flex-col gap-2">
+              <Select
+                label="字体"
+                selectedKeys={
+                  new Set([
+                    selectedItemFontFamily ?? settings.font_family,
+                  ]) as Selection
+                }
+                onSelectionChange={handleFontSelectionChange}
+                className="rounded-2xl"
+              >
+                {FONT_OPTIONS.map((font) => (
+                  <SelectItem key={font}>{font}</SelectItem>
+                ))}
+              </Select>
             </div>
-          </div>
+          ) : null}
 
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">当前模块颜色</label>
-            <Input
-              type="color"
-              value={selectedItemColor ?? settings.accent_color ?? "#1f2937"}
-              isDisabled={selectedItemColor === null}
-              onChange={(e) => handleBlockColorChange(e as unknown as ChangeEvent<HTMLInputElement>)}
-              className="h-10 rounded-2xl"
-            />
-            <div className="text-xs text-zinc-500 dark:text-zinc-400">
-              {selectedItemColor === null ? "点击模块后可调整颜色" : `当前：${selectedItemColor}`}
+          {isTextSelected ? (
+            <div className="flex flex-col gap-2 animate-in fade-in slide-in-from-bottom-1 duration-300">
+              <Slider
+                label="当前模块字号（pt）"
+                minValue={8}
+                maxValue={32}
+                step={1}
+                value={selectedItemFontSize ?? settings.font_size_pt}
+                isDisabled={selectedItemFontSize === null}
+                onChange={(val) =>
+                  typeof val === "number" && onSelectedItemFontSizeChange(val)
+                }
+              />
+              <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                {selectedItemFontSize === null
+                  ? "点击右侧模块后可调整该模块字号"
+                  : `当前：${selectedItemFontSize} pt`}
+              </div>
             </div>
-          </div>
+          ) : null}
 
-          <div className="flex items-center gap-3">
-            <Switch isDisabled={!onToggleBold} onChange={() => onToggleBold?.()}>粗体</Switch>
-            <Switch isDisabled={!onToggleItalic} onChange={() => onToggleItalic?.()}>斜体</Switch>
-            <Switch isDisabled={!onToggleUnderline} onChange={() => onToggleUnderline?.()}>下划线</Switch>
-          </div>
+          {(isTextSelected || isDividerSelected) ? (
+            <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-1 duration-300">
+              <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">颜色</label>
+              <div className="grid grid-cols-8 gap-2">
+                {presetColors.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => onSelectedItemColorChange(c)}
+                    className={`h-6 w-6 rounded-full border ${selectedItemColor === c ? "ring-2 ring-kawaii-purple" : "ring-0"}`}
+                    style={{ backgroundColor: c }}
+                    aria-label={c}
+                  />
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="color"
+                  value={currentColor}
+                  onChange={(e) => handleBlockColorChange(e as unknown as ChangeEvent<HTMLInputElement>)}
+                  className="h-10 w-12 rounded-2xl"
+                />
+                {isDividerSelected && (
+                  <>
+                    <Input label="R" type="number" min={0} max={255} className="w-16" onChange={(e) => handleRGBChange(e as unknown as ChangeEvent<HTMLInputElement>, "r")} />
+                    <Input label="G" type="number" min={0} max={255} className="w-16" onChange={(e) => handleRGBChange(e as unknown as ChangeEvent<HTMLInputElement>, "g")} />
+                    <Input label="B" type="number" min={0} max={255} className="w-16" onChange={(e) => handleRGBChange(e as unknown as ChangeEvent<HTMLInputElement>, "b")} />
+                  </>
+                )}
+              </div>
+            </div>
+          ) : null}
+
+          {!selectedItemType && (
+            <div className="mt-12 flex flex-col items-center justify-center gap-3 text-center">
+              <div className="h-20 w-20 rounded-full bg-kawaii-purpleLight" />
+              <div className="text-sm font-bold text-kawaii-text/80">未选中任何模块</div>
+              <div className="text-xs text-kawaii-text/60">点击画布上的模块以编辑样式，或从左侧添加新模块</div>
+            </div>
+          )}
+
+          {isTextSelected ? (
+            <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-1 duration-300">
+              <div className="flex items-center gap-2">
+                <Button radius="full" variant="bordered" size="sm" onPress={() => onFormatText?.("bold")}>B</Button>
+                <Button radius="full" variant="bordered" size="sm" onPress={() => onFormatText?.("italic")}>I</Button>
+                <Button radius="full" variant="bordered" size="sm" onPress={() => onFormatText?.("underline")}>U</Button>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button radius="full" variant="bordered" size="sm" onPress={() => onListToggle?.("bullet")}>• List</Button>
+                <Button radius="full" variant="bordered" size="sm" onPress={() => onListToggle?.("number")}>1. List</Button>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button radius="full" variant="bordered" size="sm" onPress={() => onAlignElement?.("left")}>左</Button>
+                <Button radius="full" variant="bordered" size="sm" onPress={() => onAlignElement?.("center")}>中</Button>
+                <Button radius="full" variant="bordered" size="sm" onPress={() => onAlignElement?.("right")}>右</Button>
+              </div>
+            </div>
+          ) : null}
+
+          {isDividerSelected ? (
+            <div className="mt-4 flex flex-col gap-2 animate-in fade-in slide-in-from-bottom-1 duration-300">
+              <Slider
+                label="分割线粗细（px）"
+                minValue={1}
+                maxValue={10}
+                step={1}
+                value={dividerThicknessValue}
+                onChange={(val) =>
+                  typeof val === "number" && onDividerThicknessChange?.(val)
+                }
+              />
+              <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                当前：{dividerThicknessValue}px
+              </div>
+            </div>
+          ) : null}
+
+          {isImageSelected ? (
+            <div className="mt-4 space-y-3 animate-in fade-in slide-in-from-bottom-1 duration-300">
+              <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">图片缩放</label>
+              <Slider
+                label="缩放比例（%）"
+                minValue={50}
+                maxValue={200}
+                step={1}
+                value={imageScalePercent}
+                onChange={(val) =>
+                  typeof val === "number" &&
+                  onImageZoomChange?.(Math.round(val) / 100)
+                }
+              />
+              <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
+                <span>当前：{imageScalePercent}%</span>
+                <Button
+                  size="sm"
+                  variant="light"
+                  onPress={() => onImageZoomReset?.()}
+                >
+                  重置缩放
+                </Button>
+              </div>
+              <div
+                ref={previewRef}
+                onMouseDown={handlePreviewMouseDown}
+                onMouseMove={handlePreviewMouseMove}
+                onMouseUp={handlePreviewMouseUp}
+                className="relative h-32 w-full overflow-hidden rounded-2xl border border-kawaii-pinkLight bg-zinc-50"
+                style={{
+                  backgroundImage: imagePreviewURL ? `url(${imagePreviewURL})` : undefined,
+                  backgroundSize: "cover",
+                  backgroundPosition: "center",
+                  cursor: "crosshair",
+                }}
+              >
+                <div
+                  className="absolute h-2 w-2 -translate-x-1 -translate-y-1 rounded-full bg-kawaii-purple shadow"
+                  style={{ left: `${imageFocus.x}%`, top: `${imageFocus.y}%` }}
+                />
+                <div className="absolute inset-0 pointer-events-none bg-gradient-to-tr from-white/10 to-transparent" />
+              </div>
+              <div className="text-xs text-zinc-500">当前焦点：{imageFocus.x}% / {imageFocus.y}% ，拖拽预览更新焦点</div>
+            </div>
+          ) : null}
         </div>
       </div>
     </Card>
