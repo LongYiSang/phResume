@@ -173,8 +173,6 @@ export function TopToolbar() {
       return;
     }
 
-    updateToolbar();
-
     const unregister = mergeRegister(
       activeEditor.registerUpdateListener(() => {
         updateToolbar();

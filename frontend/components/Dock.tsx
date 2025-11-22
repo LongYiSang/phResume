@@ -56,18 +56,17 @@ function DockButton({ icon, label, onClick, disabled, colorClass }: { icon: Reac
   );
 }
 
-function DockGhostButton({ icon, label, onClick, isActive }: { icon: React.ReactNode; label: string; onClick: () => void; isActive?: boolean }) {
+function DockGhostButton({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="group relative flex flex-col items-center justify-center w-14 h-14 mx-auto transition-all duration-200"
+      className="group relative flex flex-col items-center justify-center w-14 h-14 mx-auto transition-all duration-200 active:scale-95"
     >
-      <div className={`absolute inset-0 rounded-2xl ${isActive ? "bg-kawaii-purple shadow-lg shadow-kawaii-purple/30" : "bg-kawaii-purpleLight opacity-50"}`} />
-      <div className={`relative z-10 flex items-center justify-center w-10 h-10 rounded-xl transition-all duration-300 ease-out group-hover:scale-105 ${isActive ? "text-white" : "text-kawaii-purple"}`}>
+      <div className={`relative z-10 flex items-center justify-center w-10 h-10 rounded-xl bg-white shadow-sm transition-all duration-300 ease-out group-hover:-translate-y-1 group-hover:shadow-md group-hover:scale-105 text-kawaii-purple`}>
         {icon}
       </div>
-      <span className={`pointer-events-none text-[9px] font-bold text-kawaii-text/70 mt-1 transition-all duration-300 ease-out ${isActive ? "opacity-0" : "opacity-0 translate-y-1 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100"}`}>
+      <span className={`pointer-events-none text-[9px] font-bold text-kawaii-text/70 mt-1 opacity-0 translate-y-1 scale-95 transition-all duration-300 ease-out group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100`}>
         {label}
       </span>
     </button>

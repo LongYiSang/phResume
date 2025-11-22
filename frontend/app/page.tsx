@@ -17,13 +17,12 @@ import Dock from "@/components/Dock";
 import { TextItem } from "@/components/TextItem";
 import { DividerItem } from "@/components/DividerItem";
 import { ImageItem } from "@/components/ImageItem";
-import { TopToolbar } from "@/components/editor/TopToolbar";
 import { TemplatesPanel } from "@/components/TemplatesPanel";
 import { MyResumesPanel } from "@/components/MyResumesPanel";
 import { useAuth } from "@/context/AuthContext";
 import { ActiveEditorProvider } from "@/context/ActiveEditorContext";
 import { useAuthFetch } from "@/hooks/useAuthFetch";
-import { Button } from "@heroui/react";
+import { Move } from "lucide-react";
 import {
   DEFAULT_LAYOUT_SETTINGS,
   GRID_COLS,
@@ -173,7 +172,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [taskStatus, setTaskStatus] = useState<TaskStatus>("idle");
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const [isUploadingAsset, setIsUploadingAsset] = useState(false);
+  // const [isUploadingAsset, setIsUploadingAsset] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [isMyResumesOpen, setIsMyResumesOpen] = useState(false);
   const [zoom, setZoom] = useState(1);
@@ -488,15 +487,15 @@ export default function Home() {
     }
   };
 
-  const renderDownloadLabel = () => {
-    if (taskStatus === "pending") {
-      return "生成中...";
-    }
-    if (taskStatus === "completed") {
-      return "已生成，重新生成";
-    }
-    return "生成 PDF";
-  };
+  // const renderDownloadLabel = () => {
+  //   if (taskStatus === "pending") {
+  //     return "生成中...";
+  //   }
+  //   if (taskStatus === "completed") {
+  //     return "已生成，重新生成";
+  //   }
+  //   return "生成 PDF";
+  // };
 
   const layout = useMemo<Layout[]>(() => {
     if (!resumeData) {
@@ -1193,8 +1192,6 @@ export default function Home() {
               })
             }
             disabled={!resumeData}
-            templatesActive={isTemplatesOpen}
-            savedActive={isMyResumesOpen}
           />
         </div>
 
@@ -1238,6 +1235,10 @@ export default function Home() {
               onImageZoomChange={handleImageZoomChange}
               onImageFocusChange={handleImageFocusChange}
               onImageZoomReset={handleImageZoomReset}
+              onDeleteSelected={() => {
+                if (!selectedItemId) return;
+                handleDeleteItem(selectedItemId);
+              }}
               onFormatText={(type) => {
                 if (!selectedItemId) return;
                 if (!type) return;
@@ -1342,20 +1343,9 @@ export default function Home() {
                               重叠
                             </div>
                           )}
-                          <div className="rgl-drag-handle absolute right-2 top-2 hidden cursor-move rounded-full border border-zinc-300 bg-white/80 px-2 py-0.5 text-xs text-zinc-500 shadow-sm group-hover:flex">
-                            拖动
+                          <div className="rgl-drag-handle absolute -top-1.5 right-0.5 flex items-center justify-center w-4 h-4 rounded-[6px] border border-zinc-300 bg-white/90 text-zinc-500 shadow-sm cursor-move">
+                            <Move size={9} />
                           </div>
-                          <button
-                            type="button"
-                            className="absolute right-14 top-2 hidden rounded-full border border-zinc-300 bg-white/80 px-2 py-0.5 text-xs text-red-500 shadow-sm group-hover:flex"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteItem(item.id);
-                            }}
-                            aria-label="删除模块"
-                          >
-                            删除
-                          </button>
 
                           {item.type === "text" && (
                             <TextItem

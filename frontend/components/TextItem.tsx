@@ -136,43 +136,25 @@ function FocusTrackerPlugin() {
   return null;
 }
 
-export function TextItem({
-  html,
-  style,
-  onChange,
-  readOnly = false,
-}: TextItemProps) {
-  const baseStyle: CSSProperties = {
-    cursor: readOnly ? "default" : "text",
-  };
+function TextItemReadOnly({ html, style }: { html: string; style?: CSSProperties }) {
+  return (
+    <div
+      className="text-item-readonly pointer-events-none select-none"
+      style={style}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
 
-  if (readOnly || !onChange) {
-    return (
-      <div
-        className="text-item-readonly pointer-events-none select-none"
-        style={{ ...baseStyle, ...style }}
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
-    );
-  }
-
+function TextItemEditable({ html, style, onChange }: { html: string; style?: CSSProperties; onChange: (newHtml: string) => void }) {
   const initialHtmlRef = useRef(html);
   const lastSyncedHtmlRef = useRef(html);
-
   const [isFocused, setIsFocused] = useState(false);
-
   const initialConfig = useMemo(
     () => ({
       namespace: "text-item-editor",
       editable: true,
-      nodes: [
-        HeadingNode,
-        QuoteNode,
-        ListNode,
-        ListItemNode,
-        CodeNode,
-        LinkNode,
-      ],
+      nodes: [HeadingNode, QuoteNode, ListNode, ListItemNode, CodeNode, LinkNode],
       theme: {},
       onError(error: Error) {
         console.error("Lexical error:", error);
@@ -187,7 +169,6 @@ export function TextItem({
     }),
     [],
   );
-
   const handleEditorChange = useCallback(
     (editorState: EditorState, editor: LexicalEditor) => {
       editorState.read(() => {
@@ -201,21 +182,16 @@ export function TextItem({
     },
     [onChange],
   );
-
   return (
     <LexicalComposer initialConfig={initialConfig}>
-      <div
-        className={`h-full w-full rounded-lg bg-white/80 p-3 transition-all ${
-          isFocused ? "ring-1 ring-blue-500" : "ring-1 ring-transparent"
-        }`}
-      >
+      <div className={`h-full w-full rounded-lg bg-white/80 p-3 transition-all ${isFocused ? "ring-1 ring-blue-500" : "ring-1 ring-transparent"}`}>
         <RichTextPlugin
           contentEditable={
             <ContentEditable
               className="text-item-editor"
               onFocus={() => setIsFocused(true)}
               onBlur={() => setIsFocused(false)}
-              style={{ ...baseStyle, ...style }}
+              style={style}
             />
           }
           placeholder={null}
@@ -226,12 +202,15 @@ export function TextItem({
         <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
         <OnChangePlugin onChange={handleEditorChange} />
         <FocusTrackerPlugin />
-        <ExternalHtmlSyncPlugin
-          html={html}
-          lastSyncedHtmlRef={lastSyncedHtmlRef}
-        />
+        <ExternalHtmlSyncPlugin html={html} lastSyncedHtmlRef={lastSyncedHtmlRef} />
       </div>
     </LexicalComposer>
   );
 }
-// 工具栏移至样式面板侧，模块内部不再渲染工具按钮
+
+export function TextItem({ html, style, onChange, readOnly = false }: TextItemProps) {
+  if (readOnly || !onChange) {
+    return <TextItemReadOnly html={html} style={style} />;
+  }
+  return <TextItemEditable html={html} style={style} onChange={onChange} />;
+}

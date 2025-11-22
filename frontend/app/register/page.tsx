@@ -39,7 +39,7 @@ export default function RegisterPage() {
       }
 
       setError("注册失败，请稍后再试");
-    } catch (err) {
+    } catch {
       setError("注册失败，请稍后再试");
     } finally {
       setIsSubmitting(false);

@@ -219,7 +219,7 @@ export function MyResumesPanel({
 
   return (
     <div
-      className={`fixed top-6 bottom-6 left-24 w-80 z-30 bg-white/90 backdrop-blur-2xl border border-white/60 rounded-[32px] shadow-2xl shadow-kawaii-purple/10 flex flex-col overflow-hidden transition-all duration-500 ease-out ${isOpen ? "translate-x-0 opacity-100" : "-translate-x-[120%] opacity-0 pointer-events-none"}`}
+      className={`fixed top-6 bottom-6 left-28 w-80 z-30 bg-white/90 backdrop-blur-2xl border border-white/60 rounded-[32px] shadow-2xl shadow-kawaii-purple/10 flex flex-col overflow-hidden transition-all duration-500 ease-out ${isOpen ? "translate-x-0 opacity-100" : "-translate-x-[120%] opacity-0 pointer-events-none"}`}
       style={{ backgroundImage: "radial-gradient(#fce7f3 1.5px, transparent 1.5px)", backgroundSize: "20px 20px" }}
     >
       <div className="relative p-6 pb-4 flex items-center justify-between">
