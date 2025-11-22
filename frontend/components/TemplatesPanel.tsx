@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { ResumeData } from "@/types/resume";
 import { useAuthFetch } from "@/hooks/useAuthFetch";
 import { normalizeResumeContent } from "@/utils/resume";
-import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Input, Card } from "@heroui/react";
+import { Button, Input } from "@heroui/react";
+import { X, LayoutTemplate } from "lucide-react";
 
 type TemplateListItem = {
   id: number;
@@ -200,13 +201,36 @@ export function TemplatesPanel({
   };
 
   return (
-    <Modal isOpen={isOpen} onOpenChange={(open) => !open && onClose()} backdrop="blur">
-      <ModalContent className="rounded-3xl">
-        <ModalHeader>模板</ModalHeader>
-        <ModalBody>
-          <Card className="p-3 rounded-2xl bg-white/70 backdrop-blur-md">
-            <h3 className="text-sm font-medium text-zinc-800 dark:text-zinc-200">保存当前为模板</h3>
-            <div className="mt-2 flex gap-2">
+    <div
+      className={`fixed top-6 bottom-6 left-24 w-80 z-30 bg-white/90 backdrop-blur-2xl border border-white/60 rounded-[32px] shadow-2xl shadow-kawaii-purple/10 flex flex-col overflow-hidden transition-all duration-500 ease-out ${isOpen ? "translate-x-0 opacity-100" : "-translate-x-[120%] opacity-0 pointer-events-none"}`}
+      style={{ backgroundImage: "radial-gradient(#fce7f3 1.5px, transparent 1.5px)", backgroundSize: "20px 20px" }}
+    >
+      <div className="relative p-6 pb-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-sm bg-kawaii-pink text-white">
+            <LayoutTemplate size={20} />
+          </div>
+          <div>
+            <h2 className="font-display font-bold text-xl text-kawaii-text leading-none">Templates</h2>
+            <span className="text-[10px] font-bold text-kawaii-text/40 uppercase tracking-wider">Choose a style</span>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-8 h-8 rounded-full bg-white/50 hover:bg-kawaii-pink hover:text-white flex items-center justify-center text-kawaii-text/50 transition-all duration-200 active:scale-90"
+        >
+          <X size={18} />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-5 pb-5">
+        <div className="mb-6 relative">
+          <div className="relative bg-white border border-white/60 rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-2 text-kawaii-text/60 text-xs font-bold uppercase tracking-wide">
+              <span>保存当前为模板</span>
+            </div>
+            <div className="flex items-center gap-2 bg-kawaii-bg rounded-xl p-1 pr-1">
               <Input
                 value={saveTitle}
                 onChange={(e) => setSaveTitle((e.target as HTMLInputElement).value)}
@@ -217,26 +241,32 @@ export function TemplatesPanel({
                 保存
               </Button>
             </div>
-          </Card>
+          </div>
+        </div>
 
-          <Card className="p-3 rounded-2xl bg-white/70 backdrop-blur-md">
-            <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-sm font-medium text-zinc-800 dark:text-zinc-200">我的模板与公开模板</h3>
-              {isLoading && <span className="text-xs text-zinc-500">加载中...</span>}
+        <div className="space-y-4">
+          {error && (
+            <div className="rounded bg-red-100 px-2 py-1 text-xs text-red-700">{error}</div>
+          )}
+          {isLoading && <span className="text-xs text-zinc-500">加载中...</span>}
+          {templates.length === 0 && !isLoading ? (
+            <div className="flex flex-col items-center justify-center py-12 text-kawaii-text/40 space-y-3">
+              <div className="w-16 h-16 bg-white/50 rounded-full flex items-center justify-center">
+                <LayoutTemplate size={32} className="opacity-50" />
+              </div>
+              <p className="text-sm font-medium">暂无模板</p>
             </div>
-            {error && (
-              <div className="mb-2 rounded bg-red-100 px-2 py-1 text-xs text-red-700 dark:bg-red-900/40 dark:text-red-200">{error}</div>
-            )}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {templates.map((t) => {
-                const isPreviewUpdating = Boolean(previewLoadingMap[t.id]);
-                return (
-                  <div key={t.id} className="flex items-center gap-3 rounded-2xl border border-zinc-200 p-2">
-                    <div className="relative h-12 w-12">
+          ) : (
+            templates.map((t) => {
+              const isPreviewUpdating = Boolean(previewLoadingMap[t.id]);
+              return (
+                <div key={t.id} className="relative">
+                  <div className="relative bg-white p-3 pb-10 rounded-xl shadow-sm border border-white transform transition-all duration-300 hover:scale-[1.02] hover:-rotate-1 hover:shadow-card">
+                    <div className="aspect-[4/3] rounded-lg mb-3 relative overflow-hidden bg-kawaii-bg">
                       {t.preview_image_url ? (
-                        <img src={t.preview_image_url} alt={t.title} className="h-12 w-12 rounded object-cover" />
+                        <img src={t.preview_image_url} alt={t.title} className="absolute inset-0 h-full w-full object-cover" />
                       ) : (
-                        <div className="flex h-full w-full items-center justify-center rounded bg-zinc-100 text-[10px] text-zinc-500">
+                        <div className="absolute inset-0 flex items-center justify-center rounded bg-zinc-100 text-[10px] text-zinc-500">
                           <CameraIcon className="h-4 w-4 opacity-70" />
                         </div>
                       )}
@@ -245,56 +275,49 @@ export function TemplatesPanel({
                           <SpinnerIcon className="h-4 w-4 text-white" />
                         </div>
                       )}
-                    </div>
-                    <div className="flex-1 overflow-hidden">
-                      <div className="truncate text-sm font-medium text-zinc-900">{t.title}</div>
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <Button variant="bordered" onPress={() => handleApply(t.id)} isDisabled={!canInteract} className="rounded-2xl">
-                        应用
-                      </Button>
-                      {t.is_owner && (
-                        <>
-                          <Button
-                            variant="bordered"
-                            onPress={() => handleGeneratePreview(t.id)}
-                            isDisabled={!canInteract || isPreviewUpdating}
-                            className="rounded-2xl"
+                      <div className="absolute inset-0 bg-kawaii-text/10 backdrop-blur-[2px] opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleApply(t.id)}
+                          disabled={!canInteract}
+                          className="w-10 h-10 rounded-full bg-white text-kawaii-purple hover:bg-kawaii-purple hover:text-white shadow-lg transition-all"
+                        >
+                          应用
+                        </button>
+                        {t.is_owner && (
+                          <button
+                            type="button"
+                            onClick={() => handleGeneratePreview(t.id)}
+                            disabled={!canInteract || isPreviewUpdating}
+                            className="w-10 h-10 rounded-full bg-white text-kawaii-text hover:bg-kawaii-blue hover:text-white shadow-lg transition-all"
                           >
-                            <span className="flex items-center justify-center gap-1">
-                              {isPreviewUpdating ? (
-                                <>
-                                  <SpinnerIcon className="h-3.5 w-3.5" />
-                                  <span>生成中</span>
-                                </>
-                              ) : (
-                                <>
-                                  <CameraIcon className="h-3.5 w-3.5" />
-                                  <span>刷新预览</span>
-                                </>
-                              )}
-                            </span>
-                          </Button>
-                          <Button variant="bordered" color="danger" onPress={() => handleDelete(t.id)} className="rounded-2xl">
+                            <CameraIcon className="h-4 w-4" />
+                          </button>
+                        )}
+                        {t.is_owner && (
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(t.id)}
+                            className="w-10 h-10 rounded-full bg-white text-kawaii-pink hover:bg-kawaii-pink hover:text-white shadow-lg transition-all"
+                          >
                             删除
-                          </Button>
-                        </>
-                      )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="absolute bottom-3 left-3 right-3 flex items-start justify-between">
+                      <div className="overflow-hidden">
+                        <h4 className="font-bold text-kawaii-text text-sm truncate pr-2">{t.title}</h4>
+                      </div>
                     </div>
                   </div>
-                );
-              })}
-              {templates.length === 0 && !isLoading && (
-                <div className="col-span-full select-none rounded-2xl border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500">暂无模板</div>
-              )}
-            </div>
-          </Card>
-        </ModalBody>
-        <ModalFooter>
-          <Button variant="bordered" onPress={onClose} className="rounded-2xl">关闭</Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

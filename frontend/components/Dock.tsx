@@ -9,9 +9,11 @@ type DockProps = {
   onOpenTemplates: () => void;
   onOpenMyResumes: () => void;
   disabled?: boolean;
+  templatesActive?: boolean;
+  savedActive?: boolean;
 };
 
-export default function Dock({ onAddText, onAddImage, onAddDivider, onOpenTemplates, onOpenMyResumes, disabled }: DockProps) {
+export default function Dock({ onAddText, onAddImage, onAddDivider, onOpenTemplates, onOpenMyResumes, disabled, templatesActive, savedActive }: DockProps) {
   return (
     <div className="bg-white/80 backdrop-blur-xl border border-white/50 rounded-[32px] shadow-soft px-3 py-6 flex flex-col gap-6 transition-all duration-300 hover:shadow-card">
       <div className="w-12 h-12 bg-gradient-to-br from-kawaii-pink to-kawaii-purple rounded-2xl flex items-center justify-center shadow-lg shadow-kawaii-pink/30 mx-auto">
@@ -29,8 +31,8 @@ export default function Dock({ onAddText, onAddImage, onAddDivider, onOpenTempla
 
       <div className="flex flex-col gap-3">
         <div className="text-[10px] font-bold text-center text-kawaii-text/40 uppercase tracking-wider">Library</div>
-        <DockGhostButton icon={<LayoutTemplate size={20} />} label="Templates" onClick={onOpenTemplates} />
-        <DockGhostButton icon={<FolderOpen size={20} />} label="Saved" onClick={onOpenMyResumes} />
+        <DockGhostButton icon={<LayoutTemplate size={20} />} label="Templates" onClick={onOpenTemplates} isActive={Boolean(templatesActive)} />
+        <DockGhostButton icon={<FolderOpen size={20} />} label="Saved" onClick={onOpenMyResumes} isActive={Boolean(savedActive)} />
       </div>
     </div>
   );
@@ -45,7 +47,7 @@ function DockButton({ icon, label, onClick, disabled, colorClass }: { icon: Reac
       className="group relative flex flex-col items-center justify-center w-14 h-14 mx-auto transition-all duration-200 active:scale-95 disabled:opacity-50"
     >
       <div className="relative z-10 flex items-center justify-center w-10 h-10 rounded-xl bg-white shadow-sm transition-all duration-300 ease-out group-hover:-translate-y-1 group-hover:shadow-md group-hover:scale-105">
-        <span className={colorClass}>{icon as any}</span>
+        <span className={colorClass}>{icon}</span>
       </div>
       <span className="pointer-events-none text-[9px] font-bold text-kawaii-text/70 mt-1 opacity-0 translate-y-1 scale-95 transition-all duration-300 ease-out group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100">
         {label}
@@ -54,18 +56,18 @@ function DockButton({ icon, label, onClick, disabled, colorClass }: { icon: Reac
   );
 }
 
-function DockGhostButton({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+function DockGhostButton({ icon, label, onClick, isActive }: { icon: React.ReactNode; label: string; onClick: () => void; isActive?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className="group relative flex flex-col items-center justify-center w-14 h-14 mx-auto transition-all duration-200"
     >
-      <div className="absolute inset-0 rounded-2xl bg-kawaii-purpleLight opacity-50" />
-      <div className="relative z-10 flex items-center justify-center w-10 h-10 rounded-xl text-kawaii-purple transition-all duration-300 ease-out group-hover:scale-105">
+      <div className={`absolute inset-0 rounded-2xl ${isActive ? "bg-kawaii-purple shadow-lg shadow-kawaii-purple/30" : "bg-kawaii-purpleLight opacity-50"}`} />
+      <div className={`relative z-10 flex items-center justify-center w-10 h-10 rounded-xl transition-all duration-300 ease-out group-hover:scale-105 ${isActive ? "text-white" : "text-kawaii-purple"}`}>
         {icon}
       </div>
-      <span className="pointer-events-none text-[9px] font-bold text-kawaii-text/70 mt-1 opacity-0 translate-y-1 scale-95 transition-all duration-300 ease-out group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100">
+      <span className={`pointer-events-none text-[9px] font-bold text-kawaii-text/70 mt-1 transition-all duration-300 ease-out ${isActive ? "opacity-0" : "opacity-0 translate-y-1 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100"}`}>
         {label}
       </span>
     </button>

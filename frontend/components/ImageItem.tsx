@@ -73,6 +73,8 @@ export function ImageItem({ objectKey, style, preSignedURL }: ImageItemProps) {
       width: "100%",
       height: "100%",
       objectFit: "cover",
+      transformOrigin: "center",
+      display: "block",
       borderRadius: "0.375rem",
       ...style,
     }),

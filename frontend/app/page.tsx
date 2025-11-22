@@ -394,7 +394,7 @@ export default function Home() {
     let targetTitle = title.trim();
     let endpoint = "";
     let method: "POST" | "PUT" = "POST";
-    let resumeIdForUpdate: number | null = savedResumeId;
+    const resumeIdForUpdate: number | null = savedResumeId;
 
     if (resumeIdForUpdate === null) {
       const inputTitle = window.prompt("请输入新简历标题", title || "我的简历");
@@ -1178,9 +1178,23 @@ export default function Home() {
             onAddText={handleAddText}
             onAddImage={handleAddImageClick}
             onAddDivider={handleAddDivider}
-            onOpenTemplates={() => setIsTemplatesOpen(true)}
-            onOpenMyResumes={() => setIsMyResumesOpen(true)}
+            onOpenTemplates={() =>
+              setIsTemplatesOpen((prev) => {
+                const next = !prev;
+                if (next) setIsMyResumesOpen(false);
+                return next;
+              })
+            }
+            onOpenMyResumes={() =>
+              setIsMyResumesOpen((prev) => {
+                const next = !prev;
+                if (next) setIsTemplatesOpen(false);
+                return next;
+              })
+            }
             disabled={!resumeData}
+            templatesActive={isTemplatesOpen}
+            savedActive={isMyResumesOpen}
           />
         </div>
 
@@ -1310,6 +1324,8 @@ export default function Home() {
                         <div
                           key={item.id}
                           className={`group relative h-full w-full rounded-md border border-dashed bg-white/90 text-sm text-zinc-900 shadow-sm ${
+                            item.type === "image" ? "overflow-hidden" : ""
+                          } ${
                             isOverlapped
                               ? "border-red-500 ring-2 ring-red-400"
                               : isSelected
