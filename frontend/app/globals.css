@@ -69,9 +69,19 @@ body {
   background: transparent;
   font-size: inherit;
   line-height: 1.5;
-  white-space: pre-wrap;
+  white-space: pre !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+  overflow: hidden !important;
   color: inherit;
   font-family: inherit;
+}
+
+.text-item-editor *,
+.text-item-readonly * {
+  white-space: inherit !important;
+  overflow-wrap: inherit !important;
+  word-break: inherit !important;
 }
 
 /* Kawaii utility classes */

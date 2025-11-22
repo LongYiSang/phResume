@@ -27,12 +27,36 @@ type StylePanelProps = {
   onImageZoomReset?: () => void;
 };
 
-const FONT_OPTIONS = [
-  "DejaVu Sans",
-  "DejaVu Serif",
-  "FreeSans",
-  "FreeSerif",
-  "WenQuanYi Zen Hei",
+type FontOption = {
+  label: string;
+  value: string;
+};
+
+const FONT_OPTIONS: FontOption[] = [
+  {
+    label: "Nunito",
+    value: 'var(--font-nunito), "Nunito", "Helvetica Neue", Arial, sans-serif',
+  },
+  {
+    label: "Quicksand",
+    value: 'var(--font-quicksand), "Quicksand", "Trebuchet MS", sans-serif',
+  },
+  {
+    label: "Geist Sans",
+    value: 'var(--font-geist-sans), "Inter", "Helvetica Neue", Arial, sans-serif',
+  },
+  {
+    label: "Modern Sans",
+    value: '"Segoe UI", "PingFang SC", "Microsoft YaHei", Arial, sans-serif',
+  },
+  {
+    label: "Classic Serif",
+    value: 'Georgia, "Times New Roman", STSong, "Songti SC", serif',
+  },
+  {
+    label: "Mono",
+    value: '"Fira Mono", "SFMono-Regular", Menlo, Consolas, monospace',
+  },
 ];
 
 export function StylePanel({
@@ -68,11 +92,33 @@ export function StylePanel({
     });
   };
 
+  const activeFontFamily = selectedItemFontFamily ?? settings.font_family;
+  const fontOptions = useMemo(() => {
+    if (!activeFontFamily) {
+      return FONT_OPTIONS;
+    }
+    const exists = FONT_OPTIONS.some((option) => option.value === activeFontFamily);
+    if (exists) {
+      return FONT_OPTIONS;
+    }
+    return [
+      ...FONT_OPTIONS,
+      {
+        label: activeFontFamily,
+        value: activeFontFamily,
+      },
+    ];
+  }, [activeFontFamily]);
+  const selectedFontKey =
+    activeFontFamily ||
+    FONT_OPTIONS[0]?.value ||
+    "";
+
   const handleFontSelectionChange = (keys: Selection) => {
     if (keys === "all") return;
     const currentKey = (keys as unknown as { currentKey?: string }).currentKey;
     const val =
-      currentKey ?? Array.from(keys as Set<string>)[0] ?? settings.font_family;
+      currentKey ?? Array.from(keys as Set<string>)[0] ?? selectedFontKey;
     if (onSelectedItemFontFamilyChange) {
       onSelectedItemFontFamilyChange(val);
       return;
@@ -172,15 +218,17 @@ export function StylePanel({
               <Select
                 label="字体"
                 selectedKeys={
-                  new Set([
-                    selectedItemFontFamily ?? settings.font_family,
-                  ]) as Selection
+                  selectedFontKey
+                    ? (new Set([selectedFontKey]) as Selection)
+                    : undefined
                 }
                 onSelectionChange={handleFontSelectionChange}
                 className="rounded-2xl"
               >
-                {FONT_OPTIONS.map((font) => (
-                  <SelectItem key={font}>{font}</SelectItem>
+                {fontOptions.map((font) => (
+                  <SelectItem key={font.value} textValue={font.label}>
+                    <span style={{ fontFamily: font.value }}>{font.label}</span>
+                  </SelectItem>
                 ))}
               </Select>
             </div>

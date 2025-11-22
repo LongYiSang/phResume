@@ -589,6 +589,11 @@ export default function Home() {
     resumeData?.layout_settings?.columns ?? GRID_COLS;
   const currentRowHeight =
     resumeData?.layout_settings?.row_height_px ?? GRID_ROW_HEIGHT;
+  const layoutMarginPx =
+    resumeData?.layout_settings?.margin_px ?? DEFAULT_LAYOUT_SETTINGS.margin_px;
+  const scaledCanvasWidth = Math.round(CANVAS_WIDTH * zoom);
+  const scaledCanvasHeight = Math.round(CANVAS_HEIGHT * zoom);
+  const innerCanvasWidth = Math.max(0, scaledCanvasWidth - layoutMarginPx * 2);
 
   const selectedItem = useMemo(() => {
     if (!resumeData || !selectedItemId) {
@@ -1250,8 +1255,8 @@ export default function Home() {
             {resumeData ? (
               <div className="overflow-x-auto">
                 <PageContainer
-                  width={Math.round(CANVAS_WIDTH * zoom)}
-                  height={Math.round(CANVAS_HEIGHT * zoom)}
+                  width={scaledCanvasWidth}
+                  height={scaledCanvasHeight}
                   style={{
                     fontFamily: resumeData.layout_settings.font_family,
                     fontSize: `${resumeData.layout_settings.font_size_pt}pt`,
@@ -1268,9 +1273,9 @@ export default function Home() {
                     preventCollision
                     draggableHandle=".rgl-drag-handle"
                     draggableCancel=".text-item-editor"
-                    width={Math.round(CANVAS_WIDTH * zoom)}
+                    width={innerCanvasWidth}
                     autoSize={false}
-                    style={{ height: Math.round(CANVAS_HEIGHT * zoom) }}
+                    style={{ height: scaledCanvasHeight }}
                     margin={[0, 0]}
                     containerPadding={[0, 0]}
                     onLayoutChange={handleLayoutChange}
