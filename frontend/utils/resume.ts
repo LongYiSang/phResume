@@ -62,6 +62,18 @@ function normalizeItemStyle(raw: unknown): ResumeItemStyle {
 
   const style: ResumeItemStyle = {};
   Object.entries(raw as Record<string, unknown>).forEach(([key, value]) => {
+    if (key === "backgroundOpacity") {
+      const parsed =
+        typeof value === "number"
+          ? value
+          : typeof value === "string"
+            ? Number.parseFloat(value)
+            : Number.NaN;
+      if (!Number.isNaN(parsed)) {
+        style.backgroundOpacity = Math.max(0, Math.min(1, parsed));
+      }
+      return;
+    }
     if (typeof value === "string" || typeof value === "number") {
       style[key] = value;
     }

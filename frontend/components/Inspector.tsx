@@ -31,10 +31,14 @@ type InspectorProps = {
   onSelectedItemColorChange: (v: string) => void;
   selectedItemFontFamily?: string | null;
   selectedItemContent?: string | null;
+  selectedItemBackgroundColor?: string | null;
+  selectedItemBackgroundOpacity?: number | null;
   selectedDividerThickness?: number | null;
   selectedImageScalePercent?: number | null;
   selectedImageFocus?: { x: number; y: number } | null;
   onSelectedItemFontFamilyChange?: (family: string) => void;
+  onBackgroundColorChange?: (value: string | null) => void;
+  onBackgroundOpacityChange?: (value: number) => void;
   onDividerThicknessChange?: (px: number) => void;
   onDeleteSelected?: () => void;
   onFormatText?: (type: "bold" | "italic" | "underline") => void;
@@ -60,12 +64,12 @@ function HeaderButton({ children, onClick, disabled }: { children: React.ReactNo
   );
 }
 
-export default function Inspector({ title, onUpdateTitle, onSave, onDownload, historyCanUndo, historyCanRedo, onUndo, onRedo, styleSettings, onStyleSettingsChange, selectedItemType, selectedItemFontSize, onSelectedItemFontSizeChange, selectedItemColor, onSelectedItemColorChange, selectedItemFontFamily, selectedItemContent, selectedDividerThickness, selectedImageScalePercent, selectedImageFocus, onSelectedItemFontFamilyChange, onDividerThicknessChange, onDeleteSelected, onFormatText, onAlignElement, onListToggle, onImageZoomChange, onImageFocusChange, onImageZoomReset, zoom, setZoom }: InspectorProps) {
+export default function Inspector({ title, onUpdateTitle, onSave, onDownload, historyCanUndo, historyCanRedo, onUndo, onRedo, styleSettings, onStyleSettingsChange, selectedItemType, selectedItemFontSize, onSelectedItemFontSizeChange, selectedItemColor, onSelectedItemColorChange, selectedItemFontFamily, selectedItemContent, selectedItemBackgroundColor, selectedItemBackgroundOpacity, selectedDividerThickness, selectedImageScalePercent, selectedImageFocus, onSelectedItemFontFamilyChange, onBackgroundColorChange, onBackgroundOpacityChange, onDividerThicknessChange, onDeleteSelected, onFormatText, onAlignElement, onListToggle, onImageZoomChange, onImageFocusChange, onImageZoomReset, zoom, setZoom }: InspectorProps) {
   const { activeEditor } = useActiveEditor();
 
 
   return (
-    <div className="bg-white/80 backdrop-blur-xl border border-white/50 rounded-[32px] shadow-soft h-full flex flex-col overflow-hidden hover:shadow-card" data-top-toolbar="true">
+    <div className="bg-white/80 backdrop-blur-xl border border-white/50 rounded-[32px] shadow-soft h-full max-h-[90vh] flex flex-col overflow-hidden hover:shadow-card" data-top-toolbar="true">
       <div className="p-5 border-b border-kawaii-pinkLight space-y-4 bg-white/40">
         <div className="relative">
           <input
@@ -96,7 +100,7 @@ export default function Inspector({ title, onUpdateTitle, onSave, onDownload, hi
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-5">
+      <div className="flex-1 overflow-y-auto p-6 pb-8 scrollbar-kawaii">
         <StylePanel
           settings={styleSettings}
           onSettingsChange={onStyleSettingsChange}
@@ -106,11 +110,15 @@ export default function Inspector({ title, onUpdateTitle, onSave, onDownload, hi
           selectedItemColor={selectedItemColor}
           onSelectedItemColorChange={onSelectedItemColorChange}
           selectedItemFontFamily={selectedItemFontFamily}
+          selectedItemBackgroundColor={selectedItemBackgroundColor}
+          selectedItemBackgroundOpacity={selectedItemBackgroundOpacity}
           selectedItemContent={selectedItemContent}
           selectedDividerThickness={selectedDividerThickness}
           selectedImageScalePercent={selectedImageScalePercent}
           selectedImageFocus={selectedImageFocus}
           onSelectedItemFontFamilyChange={onSelectedItemFontFamilyChange}
+          onBackgroundColorChange={onBackgroundColorChange}
+          onBackgroundOpacityChange={onBackgroundOpacityChange}
           onDividerThicknessChange={onDividerThicknessChange}
           onFormatText={(t) => {
             if (!activeEditor) return;

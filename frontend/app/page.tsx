@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type CSSProperties,
 } from "react";
 import { useRouter } from "next/navigation";
 import RGL, { type Layout } from "react-grid-layout";
@@ -29,6 +30,7 @@ import {
   GRID_ROW_HEIGHT,
   normalizeResumeContent,
 } from "@/utils/resume";
+import { applyOpacityToColor, extractBackgroundStyle } from "@/utils/color";
 import type {
   LayoutSettings,
   ResumeData,
@@ -57,6 +59,7 @@ function parseFontSizeValue(value: unknown, fallback: number): number {
 }
 
 const DEFAULT_DIVIDER_THICKNESS = 2;
+const DEFAULT_BACKGROUND_OPACITY = 0.7;
 
 function extractDividerThickness(style?: ResumeItemStyle): number | null {
   if (!style) {
@@ -153,6 +156,19 @@ function parsePositionPercent(
     return null;
   }
   return { x, y };
+}
+
+function parseBackgroundOpacity(value: unknown): number | null {
+  if (typeof value === "number" && !Number.isNaN(value)) {
+    return Math.max(0, Math.min(1, value));
+  }
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value);
+    if (!Number.isNaN(parsed)) {
+      return Math.max(0, Math.min(1, parsed));
+    }
+  }
+  return null;
 }
 
 // 深拷贝工具：用于历史栈快照
@@ -674,6 +690,22 @@ export default function Home() {
     );
   }, [selectedItem]);
 
+  const selectedItemBackgroundColor = useMemo(() => {
+    if (!selectedItem) {
+      return null;
+    }
+    const { color } = extractBackgroundStyle(selectedItem.style);
+    return color ?? null;
+  }, [selectedItem]);
+
+  const selectedItemBackgroundOpacity = useMemo(() => {
+    if (!selectedItem) {
+      return null;
+    }
+    const { opacity } = extractBackgroundStyle(selectedItem.style);
+    return typeof opacity === "number" ? opacity : null;
+  }, [selectedItem]);
+
   const handleItemFontSizeChange = useCallback(
     (newSizePt: number) => {
       if (!selectedItemId) return;
@@ -725,6 +757,65 @@ export default function Home() {
               ...(item.style ?? {}),
               color: safeColor,
             },
+          };
+        });
+        return { ...prev, items: updatedItems };
+      });
+    },
+    [selectedItemId, withHistory],
+  );
+
+  const handleItemBackgroundColorChange = useCallback(
+    (newColor: string | null) => {
+      if (!selectedItemId) return;
+      withHistory((prev) => {
+        const updatedItems = prev.items.map((item) => {
+          if (item.id !== selectedItemId) {
+            return item;
+          }
+          const nextStyle: ResumeItemStyle = {
+            ...(item.style ?? {}),
+          };
+          const trimmed = newColor?.trim();
+          if (!trimmed) {
+            delete nextStyle.backgroundColor;
+            delete nextStyle.backgroundOpacity;
+            return {
+              ...item,
+              style: nextStyle,
+            };
+          }
+          const existingOpacity = parseBackgroundOpacity(nextStyle.backgroundOpacity);
+          nextStyle.backgroundColor = trimmed;
+          nextStyle.backgroundOpacity =
+            existingOpacity ?? DEFAULT_BACKGROUND_OPACITY;
+          return {
+            ...item,
+            style: nextStyle,
+          };
+        });
+        return { ...prev, items: updatedItems };
+      });
+    },
+    [selectedItemId, withHistory],
+  );
+
+  const handleItemBackgroundOpacityChange = useCallback(
+    (nextOpacity: number) => {
+      if (!selectedItemId) return;
+      const clamped = Math.max(0, Math.min(1, nextOpacity));
+      withHistory((prev) => {
+        const updatedItems = prev.items.map((item) => {
+          if (item.id !== selectedItemId) {
+            return item;
+          }
+          const nextStyle: ResumeItemStyle = {
+            ...(item.style ?? {}),
+          };
+          nextStyle.backgroundOpacity = clamped;
+          return {
+            ...item,
+            style: nextStyle,
           };
         });
         return { ...prev, items: updatedItems };
@@ -1195,7 +1286,7 @@ export default function Home() {
           />
         </div>
 
-        <div className="fixed right-6 top-1/2 -translate-y-1/2 z-40 w-80 max-h-[90vh]">
+        <div className="fixed right-6 top-1/2 -translate-y-1/2 z-40 w-80 " >
           {resumeData && (
             <Inspector
               title={title}
@@ -1232,6 +1323,10 @@ export default function Home() {
               selectedImageFocus={
                 selectedItem?.type === "image" ? selectedImageFocus : null
               }
+              selectedItemBackgroundColor={selectedItemBackgroundColor}
+              selectedItemBackgroundOpacity={selectedItemBackgroundOpacity}
+              onBackgroundColorChange={handleItemBackgroundColorChange}
+              onBackgroundOpacityChange={handleItemBackgroundOpacityChange}
               onImageZoomChange={handleImageZoomChange}
               onImageFocusChange={handleImageFocusChange}
               onImageZoomReset={handleImageZoomReset}
@@ -1317,26 +1412,59 @@ export default function Home() {
                         width: "100%",
                         height: "100%",
                         objectFit: "cover" as const,
-                        borderRadius: "0.375rem",
+                        borderRadius: "0.75rem",
                         ...(item.style ?? {}),
+                      };
+
+                      const backgroundMeta = extractBackgroundStyle(item.style);
+                      const resolvedBackgroundColor = applyOpacityToColor(
+                        backgroundMeta.color,
+                        backgroundMeta.opacity,
+                      );
+                      const hasCustomBackground = Boolean(backgroundMeta.color);
+                      const borderColor = isOverlapped
+                        ? "#ef4444"
+                        : isSelected
+                          ? "#a855f7"
+                          : hasCustomBackground
+                            ? "rgba(255,255,255,0.7)"
+                            : "rgba(226, 232, 240, 0.9)";
+                      const cellStyle: CSSProperties = {
+                        padding: item.type === "image" ? "8px" : "12px",
+                        backgroundColor:
+                          resolvedBackgroundColor ?? "rgba(255,255,255,0.92)",
+                        // 共享到内层：让文本编辑器与内容区域继承同样背景
+                        // 使用索引签名为 CSS 自定义变量赋值
+                        ["--cell-bg" as unknown as string]:
+                          resolvedBackgroundColor ?? "rgba(255,255,255,0.92)",
+                        borderColor,
+                        borderStyle: hasCustomBackground ? "solid" : "dashed",
+                        borderWidth: isSelected || isOverlapped ? 2 : 1,
+                        borderRadius: "22px",
+                        boxShadow: hasCustomBackground
+                          ? "0 30px 60px -35px rgba(147, 51, 234, 0.55)"
+                          : "0 20px 50px -40px rgba(15, 23, 42, 0.45)",
+                        transition:
+                          "border 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease",
+                        backdropFilter: "blur(14px)",
                       };
 
                       return (
                         <div
                           key={item.id}
-                          className={`group relative h-full w-full rounded-md border border-dashed bg-white/90 text-sm text-zinc-900 shadow-sm ${
+                          className={`group relative h-full w-full rounded-[22px] border text-sm text-zinc-900 shadow-sm transition-all ${
                             item.type === "image" ? "overflow-hidden" : ""
                           } ${
                             isOverlapped
-                              ? "border-red-500 ring-2 ring-red-400"
+                              ? "ring-2 ring-red-400"
                               : isSelected
-                              ? "border-blue-500"
-                              : "border-zinc-200"
+                                ? "ring-2 ring-kawaii-purple/40"
+                                : ""
                           }`}
                           onMouseDownCapture={() => handleSelectItem(item.id)}
                           onFocus={() => handleSelectItem(item.id)}
                           tabIndex={0}
-                          style={{ padding: "10px" }}
+                          style={cellStyle}
                         >
                           {isOverlapped && (
                             <div className="absolute left-2 top-2 rounded bg-red-500/90 px-1.5 py-0.5 text-[10px] text-white shadow">

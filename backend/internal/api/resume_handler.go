@@ -544,8 +544,10 @@ func defaultResumeContent() datatypes.JSON {
 			"type":    "text",
 			"content": "你的名字",
 			"style": map[string]any{
-				"fontSize":   "24pt",
-				"fontWeight": "bold",
+				"fontSize":          "24pt",
+				"fontWeight":        "bold",
+				"backgroundColor":   "#f5e8ff",
+				"backgroundOpacity": 0.75,
 			},
 			"layout": map[string]any{
 				"x": 0,
@@ -559,7 +561,9 @@ func defaultResumeContent() datatypes.JSON {
 			"type":    "text",
 			"content": "你的职位/头衔",
 			"style": map[string]any{
-				"fontSize": "14pt",
+				"fontSize":          "14pt",
+				"backgroundColor":   "#fff7d6",
+				"backgroundOpacity": 0.68,
 			},
 			"layout": map[string]any{
 				"x": 0,
@@ -573,7 +577,9 @@ func defaultResumeContent() datatypes.JSON {
 			"type":    "text",
 			"content": "你的联系方式：\n电话: 123-456-7890\n邮箱: hello@example.com",
 			"style": map[string]any{
-				"fontSize": "10pt",
+				"fontSize":          "10pt",
+				"backgroundColor":   "#e7fbff",
+				"backgroundOpacity": 0.72,
 			},
 			"layout": map[string]any{
 				"x": 16,

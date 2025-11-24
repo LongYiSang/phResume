@@ -13,6 +13,8 @@ import { ImageItem } from "@/components/ImageItem";
 import { DividerItem } from "@/components/DividerItem";
 import type { ResumeData, ResumeItem } from "@/types/resume";
 
+import { applyOpacityToColor, extractBackgroundStyle } from "@/utils/color";
+
 const CANVAS_WIDTH = 794;
 const DEFAULT_LAYOUT_SETTINGS = {
   columns: 24,
@@ -134,10 +136,17 @@ export function PrintView({ resourcePath }: PrintViewProps) {
         <div style={gridContainerStyle}>
           {resumeData?.items?.map((item) => {
             const resolvedLayout = resolveLayout(item.layout);
+            const backgroundMeta = extractBackgroundStyle(item.style);
+            const containerBackground =
+              applyOpacityToColor(backgroundMeta.color, backgroundMeta.opacity) ??
+              "rgba(255,255,255,0.96)";
             const commonCellStyle: CSSProperties = {
               gridColumn: `${resolvedLayout.x + 1} / span ${resolvedLayout.w}`,
               gridRow: `${resolvedLayout.y + 1} / span ${resolvedLayout.h}`,
-              padding: "10px",
+              padding: "12px",
+              borderRadius: "20px",
+              backgroundColor: containerBackground,
+              border: "1px solid rgba(226, 232, 240, 0.7)",
             };
 
             const baseTextStyle: CSSProperties = {

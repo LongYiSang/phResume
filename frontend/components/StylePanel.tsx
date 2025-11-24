@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent } from "react";
 import type { LayoutSettings } from "@/types/resume";
-import { Card, Select, SelectItem, Slider, Input, Button, type Selection } from "@heroui/react";
+import { Select, SelectItem, Slider, Input, Button, type Selection } from "@heroui/react";
+
+import { Droplets, Pipette } from "lucide-react";
 
 type StylePanelProps = {
   settings: LayoutSettings;
@@ -14,10 +16,14 @@ type StylePanelProps = {
   onSelectedItemColorChange: (value: string) => void;
   selectedItemContent?: string | null;
   selectedItemFontFamily?: string | null;
+  selectedItemBackgroundColor?: string | null;
+  selectedItemBackgroundOpacity?: number | null;
   selectedDividerThickness?: number | null;
   selectedImageScalePercent?: number | null;
   selectedImageFocus?: { x: number; y: number } | null;
   onSelectedItemFontFamilyChange?: (value: string) => void;
+  onBackgroundColorChange?: (value: string | null) => void;
+  onBackgroundOpacityChange?: (value: number) => void;
   onDividerThicknessChange?: (value: number) => void;
   onFormatText?: (type: "bold" | "italic" | "underline") => void;
   onAlignElement?: (format: "left" | "center" | "right") => void;
@@ -59,6 +65,19 @@ const FONT_OPTIONS: FontOption[] = [
   },
 ];
 
+const PASTEL_PALETTE = [
+  "#f5e8ff",
+  "#ffe6f0",
+  "#fff7d6",
+  "#e7fbff",
+  "#e3f4f4",
+  "#f0e4ff",
+  "#ffe5d9",
+  "#fef2ff",
+  "#def7ec",
+  "#fef9c3",
+];
+
 export function StylePanel({
   settings,
   onSettingsChange,
@@ -69,10 +88,14 @@ export function StylePanel({
   onSelectedItemColorChange,
   selectedItemContent,
   selectedItemFontFamily,
+  selectedItemBackgroundColor,
+  selectedItemBackgroundOpacity,
   selectedDividerThickness,
   selectedImageScalePercent,
   selectedImageFocus,
   onSelectedItemFontFamilyChange,
+  onBackgroundColorChange,
+  onBackgroundOpacityChange,
   onDividerThicknessChange,
   onFormatText,
   onAlignElement,
@@ -139,19 +162,18 @@ export function StylePanel({
   const isDividerSelected = selectedItemType === "divider";
   const isImageSelected = selectedItemType === "image" && typeof selectedItemContent === "string" && selectedItemContent.length > 0;
   const currentColor = selectedItemColor ?? settings.accent_color ?? "#1f2937";
+  const normalizedBackgroundColor = selectedItemBackgroundColor?.toLowerCase() ?? null;
+  const backgroundOpacityPercent =
+    typeof selectedItemBackgroundOpacity === "number"
+      ? Math.round(selectedItemBackgroundOpacity * 100)
+      : 0;
+  const isCustomBackground = Boolean(
+    normalizedBackgroundColor &&
+      !PASTEL_PALETTE.some((color) => color.toLowerCase() === normalizedBackgroundColor),
+  );
   const dividerThicknessValue = selectedDividerThickness ?? 2;
   const imageScalePercent = selectedImageScalePercent ?? 100;
   const imageFocus = selectedImageFocus ?? { x: 50, y: 50 };
-  const presetColors = [
-    "#000000",
-    "#fb7185",
-    "#a78bfa",
-    "#60a5fa",
-    "#34d399",
-    "#fbbf24",
-    "#ef4444",
-    "#6b7280",
-  ];
   const handleRGBChange = (event: ChangeEvent<HTMLInputElement>, channel: "r" | "g" | "b") => {
     const curr = currentColor;
     const m = curr.match(/rgb\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)\)/i);
@@ -169,6 +191,16 @@ export function StylePanel({
   const [imagePreviewURL, setImagePreviewURL] = useState<string | null>(null);
   const [isDraggingFocus, setIsDraggingFocus] = useState(false);
   const previewRef = useRef<HTMLDivElement | null>(null);
+  const customColorInputRef = useRef<HTMLInputElement | null>(null);
+
+  const colorInputValue = useMemo(() => {
+    if (!selectedItemBackgroundColor) {
+      return "#ffffff";
+    }
+    const trimmed = selectedItemBackgroundColor.trim();
+    const isHex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(trimmed);
+    return isHex ? trimmed : "#ffffff";
+  }, [selectedItemBackgroundColor]);
 
   useEffect(() => {
     let mounted = true;
@@ -207,12 +239,95 @@ export function StylePanel({
   };
   const handlePreviewMouseUp = () => setIsDraggingFocus(false);
 
+  const handleBackgroundOpacityChange = (value: number | number[]) => {
+    if (typeof value === "number") {
+      onBackgroundOpacityChange?.(value / 100);
+    }
+  };
+
+  const handleTransparentBackground = () => {
+    onBackgroundColorChange?.(null);
+  };
+
+  const handlePipetteClick = () => {
+    customColorInputRef.current?.click();
+  };
+
   return (
-    <Card className="rounded-3xl bg-white/70 backdrop-blur-md shadow-lg">
-      <div className="p-4">
+    <div className="p-4">
         <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">样式设置</h2>
 
         <div className="mt-4 space-y-5 text-sm">
+          {selectedItemType ? (
+            <div className="space-y-3 rounded-2xl border border-kawaii-pinkLight/30 bg-transparent p-4">
+              <div className="flex items-center justify-between text-xs font-semibold text-kawaii-purple">
+                <span className="flex items-center gap-1 uppercase tracking-wide">
+                  <Droplets size={14} />
+                  Background & Effects
+                </span>
+                <span className="text-kawaii-text/60">{backgroundOpacityPercent}%</span>
+              </div>
+              <Slider
+                aria-label="背景不透明度"
+                minValue={0}
+                maxValue={100}
+                step={1}
+                value={backgroundOpacityPercent}
+                onChange={handleBackgroundOpacityChange}
+              />
+              <div className="space-y-2">
+                <div className="text-xs font-medium text-zinc-500">Background Color</div>
+                <div className="grid grid-cols-6 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleTransparentBackground}
+                    className={`h-9 w-9 rounded-2xl border transition-all ${!normalizedBackgroundColor ? "ring-2 ring-kawaii-purple/70 border-kawaii-purple/40" : "border-zinc-200 hover:scale-105"}`}
+                    style={{
+                      backgroundImage:
+                        "linear-gradient(45deg, #e4e4e7 25%, transparent 25%), linear-gradient(-45deg, #e4e4e7 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e4e4e7 75%), linear-gradient(-45deg, transparent 75%, #e4e4e7 75%)",
+                      backgroundSize: "8px 8px",
+                      backgroundPosition: "0 0, 0 4px, 4px -4px, -4px 0px",
+                    }}
+                    aria-label="透明底色"
+                    title="透明底色"
+                  />
+                  {PASTEL_PALETTE.map((color) => {
+                    const isActive = normalizedBackgroundColor === color.toLowerCase();
+                    return (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => onBackgroundColorChange?.(color)}
+                        className={`h-9 w-9 rounded-2xl border transition-all ${isActive ? "ring-2 ring-kawaii-purple/70 border-kawaii-purple/30" : "border-transparent hover:scale-105"}`}
+                        style={{ backgroundColor: color }}
+                        aria-label={`选择底色 ${color}`}
+                        title={color}
+                      />
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={handlePipetteClick}
+                    className={`flex h-9 w-9 items-center justify-center rounded-2xl border transition-all ${isCustomBackground ? "ring-2 ring-kawaii-purple/70 border-kawaii-purple/30" : "border-zinc-200 hover:scale-105"}`}
+                    aria-label="自定义颜色"
+                    title="自定义颜色"
+                  >
+                    <Pipette size={16} className="text-kawaii-purple" />
+                  </button>
+                </div>
+                <div className="text-[11px] font-semibold text-kawaii-text/70">
+                  {selectedItemBackgroundColor ?? "透明"}
+                </div>
+              </div>
+              <input
+                ref={customColorInputRef}
+                type="color"
+                className="hidden"
+                value={colorInputValue}
+                onChange={(event) => onBackgroundColorChange?.(event.target.value)}
+              />
+            </div>
+          ) : null}
           {isTextSelected ? (
             <div className="flex flex-col gap-2">
               <Select
@@ -259,7 +374,7 @@ export function StylePanel({
             <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-1 duration-300">
               <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">颜色</label>
               <div className="grid grid-cols-8 gap-2">
-                {presetColors.map((c) => (
+                {PASTEL_PALETTE.map((c) => (
                   <button
                     key={c}
                     type="button"
@@ -381,6 +496,5 @@ export function StylePanel({
           ) : null}
         </div>
       </div>
-    </Card>
   );
 }

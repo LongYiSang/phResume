@@ -144,3 +144,59 @@ body {
 .text-item-readonly li {
   margin: 0.25rem 0;
 }
+/* 可爱滚动条样式 */
+.scrollbar-kawaii {
+  scrollbar-width: thin;
+  scrollbar-color: #d8b4fe #faf5ff;
+}
+.scrollbar-kawaii::-webkit-scrollbar {
+  width: 10px;
+}
+.scrollbar-kawaii::-webkit-scrollbar-track {
+  background: #faf5ff;
+  border-radius: 9999px;
+}
+.scrollbar-kawaii::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #fbcfe8 0%, #d8b4fe 100%);
+  border-radius: 9999px;
+  border: 2px solid #faf5ff;
+  transition: background 200ms ease, transform 200ms ease;
+}
+.scrollbar-kawaii::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #f472b6 0%, #a78bfa 100%);
+  transform: scale(1.05);
+}
+.scrollbar-kawaii {
+  border-radius: 24px;
+  overflow: auto;
+}
+.scrollbar-kawaii::-webkit-scrollbar-track {
+  background: #faf5ff;
+  border-radius: 24px;
+  margin: 6px;
+}
+.scrollbar-kawaii::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+}
+.mask-fade-edges::before,
+.mask-fade-edges::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 16px;
+  pointer-events: none;
+  z-index: 1;
+}
+.mask-fade-edges::before {
+  top: 0;
+  background: linear-gradient(to bottom, rgba(255,255,255,0.7), rgba(255,255,255,0));
+  border-top-left-radius: 32px;
+  border-top-right-radius: 32px;
+}
+.mask-fade-edges::after {
+  bottom: 0;
+  background: linear-gradient(to top, rgba(255,255,255,0.7), rgba(255,255,255,0));
+  border-bottom-left-radius: 32px;
+  border-bottom-right-radius: 32px;
+}

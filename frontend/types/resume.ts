@@ -16,7 +16,11 @@ export type ResumeLayout = {
   [key: string]: unknown;
 };
 
-export type ResumeItemStyle = Record<string, string | number>;
+export type ResumeItemStyle = {
+  [key: string]: string | number | undefined;
+  backgroundColor?: string;
+  backgroundOpacity?: number;
+};
 
 export type ResumeItem = {
   id: string;

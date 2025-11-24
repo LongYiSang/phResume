@@ -184,14 +184,14 @@ function TextItemEditable({ html, style, onChange }: { html: string; style?: CSS
   );
   return (
     <LexicalComposer initialConfig={initialConfig}>
-      <div className={`h-full w-full rounded-lg bg-white/80 p-3 transition-all ${isFocused ? "ring-1 ring-blue-500" : "ring-1 ring-transparent"}`}>
+      <div className={`h-full w-full p-0 transition-all ${isFocused ? "ring-1 ring-blue-500" : "ring-1 ring-transparent"}`}>
         <RichTextPlugin
           contentEditable={
             <ContentEditable
               className="text-item-editor"
               onFocus={() => setIsFocused(true)}
               onBlur={() => setIsFocused(false)}
-              style={style}
+              style={{ ...style, backgroundColor: "transparent" }}
             />
           }
           placeholder={null}
