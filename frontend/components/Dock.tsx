@@ -11,9 +11,10 @@ type DockProps = {
   disabled?: boolean;
   templatesActive?: boolean;
   savedActive?: boolean;
+  assetsActive?: boolean;
 };
 
-export default function Dock({ onAddText, onAddImage, onAddDivider, onOpenTemplates, onOpenMyResumes, disabled, templatesActive, savedActive }: DockProps) {
+export default function Dock({ onAddText, onAddImage, onAddDivider, onOpenTemplates, onOpenMyResumes, disabled, templatesActive, savedActive, assetsActive }: DockProps) {
   return (
     <div className="bg-white/80 backdrop-blur-xl border border-white/50 rounded-[32px] shadow-soft px-3 py-6 flex flex-col gap-6 transition-all duration-300 hover:shadow-card">
       <div className="w-12 h-12 bg-gradient-to-br from-kawaii-pink to-kawaii-purple rounded-2xl flex items-center justify-center shadow-lg shadow-kawaii-pink/30 mx-auto">
@@ -23,7 +24,7 @@ export default function Dock({ onAddText, onAddImage, onAddDivider, onOpenTempla
       <div className="flex flex-col gap-3">
         <div className="text-[10px] font-bold text-center text-kawaii-text/40 uppercase tracking-wider">Add</div>
         <DockButton icon={<Type size={22} />} label="Text" onClick={onAddText} disabled={disabled} colorClass="text-kawaii-blue" />
-        <DockButton icon={<ImageIcon size={22} />} label="Image" onClick={onAddImage} disabled={disabled} colorClass="text-kawaii-mint" />
+        <DockButton icon={<ImageIcon size={22} />} label="Image" onClick={onAddImage} disabled={disabled} colorClass="text-kawaii-mint" isActive={Boolean(assetsActive)} />
         <DockButton icon={<Minus size={22} />} label="Line" onClick={onAddDivider} disabled={disabled} colorClass="text-kawaii-yellow" />
       </div>
 
@@ -38,15 +39,16 @@ export default function Dock({ onAddText, onAddImage, onAddDivider, onOpenTempla
   );
 }
 
-function DockButton({ icon, label, onClick, disabled, colorClass }: { icon: React.ReactNode; label: string; onClick: () => void; disabled?: boolean; colorClass: string }) {
+function DockButton({ icon, label, onClick, disabled, colorClass, isActive }: { icon: React.ReactNode; label: string; onClick: () => void; disabled?: boolean; colorClass: string; isActive?: boolean }) {
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
+      aria-pressed={isActive}
       className="group relative flex flex-col items-center justify-center w-14 h-14 mx-auto transition-all duration-200 active:scale-95 disabled:opacity-50"
     >
-      <div className="relative z-10 flex items-center justify-center w-10 h-10 rounded-xl bg-white shadow-sm transition-all duration-300 ease-out group-hover:-translate-y-1 group-hover:shadow-md group-hover:scale-105">
+      <div className={`relative z-10 flex items-center justify-center w-10 h-10 rounded-xl bg-white shadow-sm transition-all duration-300 ease-out group-hover:-translate-y-1 group-hover:shadow-md group-hover:scale-105 ${isActive ? "ring-2 ring-kawaii-mint/60" : ""}`}>
         <span className={colorClass}>{icon}</span>
       </div>
       <span className="pointer-events-none text-[9px] font-bold text-kawaii-text/70 mt-1 opacity-0 translate-y-1 scale-95 transition-all duration-300 ease-out group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100">
@@ -56,14 +58,15 @@ function DockButton({ icon, label, onClick, disabled, colorClass }: { icon: Reac
   );
 }
 
-function DockGhostButton({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+function DockGhostButton({ icon, label, onClick, isActive }: { icon: React.ReactNode; label: string; onClick: () => void; isActive?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="group relative flex flex-col items-center justify-center w-14 h-14 mx-auto transition-all duration-200 active:scale-95"
+      aria-pressed={isActive}
+      className={`group relative flex flex-col items-center justify-center w-14 h-14 mx-auto transition-all duration-200 active:scale-95 ${isActive ? "text-kawaii-purple" : ""}`}
     >
-      <div className={`relative z-10 flex items-center justify-center w-10 h-10 rounded-xl bg-white shadow-sm transition-all duration-300 ease-out group-hover:-translate-y-1 group-hover:shadow-md group-hover:scale-105 text-kawaii-purple`}>
+      <div className={`relative z-10 flex items-center justify-center w-10 h-10 rounded-xl bg-white shadow-sm transition-all duration-300 ease-out group-hover:-translate-y-1 group-hover:shadow-md group-hover:scale-105 text-kawaii-purple ${isActive ? "ring-2 ring-kawaii-purple/40" : ""}`}>
         {icon}
       </div>
       <span className={`pointer-events-none text-[9px] font-bold text-kawaii-text/70 mt-1 opacity-0 translate-y-1 scale-95 transition-all duration-300 ease-out group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100`}>

@@ -16,6 +16,7 @@ import type { ResumeData, ResumeItem } from "@/types/resume";
 import { applyOpacityToColor, extractBackgroundStyle } from "@/utils/color";
 
 const CANVAS_WIDTH = 794;
+const CANVAS_HEIGHT = Math.round((CANVAS_WIDTH * 297) / 210);
 const DEFAULT_LAYOUT_SETTINGS = {
   columns: 24,
   row_height_px: 10,
@@ -82,6 +83,13 @@ export function PrintView({ resourcePath }: PrintViewProps) {
 
         const data = (await response.json()) as ResumeData;
         setResumeData(data);
+        const fontsReady = (document as unknown as { fonts?: { ready?: Promise<void> } }).fonts?.ready;
+        const timeout = new Promise<void>((resolve) => setTimeout(resolve, 3000));
+        if (fontsReady) {
+          try {
+            await Promise.race([fontsReady, timeout]);
+          } catch {}
+        }
         setIsRendered(true);
       } catch (err) {
         if (controller.signal.aborted) {
@@ -126,6 +134,7 @@ export function PrintView({ resourcePath }: PrintViewProps) {
     <div className="min-h-screen bg-zinc-100 py-8">
       <PageContainer
         width={CANVAS_WIDTH}
+        height={CANVAS_HEIGHT}
         style={{
           fontFamily: layoutSettings.font_family,
           fontSize: `${layoutSettings.font_size_pt}pt`,
@@ -140,18 +149,32 @@ export function PrintView({ resourcePath }: PrintViewProps) {
             const containerBackground =
               applyOpacityToColor(backgroundMeta.color, backgroundMeta.opacity) ??
               "rgba(255,255,255,0.96)";
+            const hasCustomBackground = Boolean(
+              backgroundMeta.color && backgroundMeta.color.trim().length > 0 &&
+              ((typeof backgroundMeta.opacity === "number" ? backgroundMeta.opacity : 1) > 0)
+            );
             const commonCellStyle: CSSProperties = {
               gridColumn: `${resolvedLayout.x + 1} / span ${resolvedLayout.w}`,
               gridRow: `${resolvedLayout.y + 1} / span ${resolvedLayout.h}`,
               padding: "12px",
               borderRadius: "20px",
               backgroundColor: containerBackground,
-              border: "1px solid rgba(226, 232, 240, 0.7)",
+              minWidth: 0,
+              boxSizing: "border-box",
+              border:
+                item.type === "text" && !hasCustomBackground
+                  ? "none"
+                  : "1px solid rgba(226, 232, 240, 0.7)",
             };
 
             const baseTextStyle: CSSProperties = {
               fontSize: `${layoutSettings.font_size_pt}pt`,
               color: layoutSettings.accent_color,
+              whiteSpace: "pre-wrap",
+              overflowWrap: "anywhere",
+              wordBreak: "break-word",
+              overflow: "visible",
+              paddingRight: "2px",
               ...(item.style ?? {}),
             };
 

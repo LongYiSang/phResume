@@ -20,6 +20,13 @@ type Client struct {
 	bucketName     string
 }
 
+// ObjectMeta 描述 Bucket 中对象的关键信息。
+type ObjectMeta struct {
+	Key          string
+	Size         int64
+	LastModified time.Time
+}
+
 // NewClient 根据配置初始化 MinIO 客户端，并确保目标 Bucket 存在。
 func NewClient(cfg config.MinIOConfig) (*Client, error) {
 	internalClient, err := minio.New(cfg.Endpoint, &minio.Options{
@@ -96,4 +103,31 @@ func (c *Client) GeneratePresignedURL(ctx context.Context, objectKey string, dur
 		return "", fmt.Errorf("generate presigned url for %q: %w", objectKey, err)
 	}
 	return presignedURL.String(), nil
+}
+
+// ListObjects 列出指定前缀下的对象元数据。
+func (c *Client) ListObjects(ctx context.Context, prefix string, limit int) ([]ObjectMeta, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	objCh := c.internalClient.ListObjects(ctx, c.bucketName, minio.ListObjectsOptions{
+		Prefix:    prefix,
+		Recursive: true,
+	})
+	result := make([]ObjectMeta, 0, limit)
+	for object := range objCh {
+		if object.Err != nil {
+			return nil, fmt.Errorf("list objects under %q: %w", prefix, object.Err)
+		}
+		meta := ObjectMeta{
+			Key:          object.Key,
+			Size:         object.Size,
+			LastModified: object.LastModified,
+		}
+		result = append(result, meta)
+		if len(result) >= limit {
+			break
+		}
+	}
+	return result, nil
 }

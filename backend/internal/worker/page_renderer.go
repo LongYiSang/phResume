@@ -51,6 +51,20 @@ func renderFrontendPage(logger *slog.Logger, targetURL string) (_ *rod.Page, cle
 	page.MustWaitLoad()
 	logger.Info("Worker: Waiting for frontend render signal (#pdf-render-ready)...")
 	page.Timeout(30 * time.Second).MustElement("#pdf-render-ready")
+
+	// 额外等待 WebFont/系统字体就绪，避免回退字体度量导致排版差异
+	logger.Info("Worker: Waiting for document.fonts.ready...")
+	if _, evalErr := page.Timeout(5 * time.Second).Eval(`() => {
+	  if (document && document.fonts && document.fonts.ready) {
+	    return Promise.race([
+	      document.fonts.ready.then(() => true),
+	      new Promise((resolve) => setTimeout(() => resolve(true), 3000))
+	    ]);
+	  }
+	  return true;
+	}`); evalErr != nil {
+		logger.Warn("Worker: document.fonts.ready wait failed, continue", slog.Any("error", evalErr))
+	}
 	logger.Info("Worker: Render signal received.")
 
 	if err := (proto.EmulationSetEmulatedMedia{Media: "print"}).Call(page); err != nil {

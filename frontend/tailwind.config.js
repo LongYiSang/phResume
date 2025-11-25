@@ -7,8 +7,21 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["Nunito", "var(--font-geist-sans)", "sans-serif"],
-        display: ["Quicksand", "var(--font-geist-sans)", "sans-serif"],
+        sans: [
+          "var(--font-nunito)",
+          "var(--font-open-sans)",
+          "var(--font-noto-sans-sc)",
+          "var(--font-wqy-zenhei)",
+          "var(--font-geist-sans)",
+          "sans-serif",
+        ],
+        display: [
+          "var(--font-quicksand)",
+          "var(--font-nunito)",
+          "var(--font-open-sans)",
+          "var(--font-geist-sans)",
+          "sans-serif",
+        ],
       },
       colors: {
         kawaii: {

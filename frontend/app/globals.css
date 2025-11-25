@@ -15,8 +15,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: Nunito, var(--font-geist-sans), system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
-  --font-display: Quicksand, Nunito, var(--font-geist-sans), system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-sans: var(--font-nunito), var(--font-open-sans), var(--font-noto-sans-sc), var(--font-wqy-zenhei), var(--font-geist-sans), system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-display: var(--font-quicksand), var(--font-nunito), var(--font-open-sans), var(--font-geist-sans), system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
   --color-primary: #F8B4D9;
   --color-secondary: #B4E4FF;
   --color-accent: #D8B4FE;
@@ -143,6 +143,16 @@ body {
 .text-item-editor li,
 .text-item-readonly li {
   margin: 0.25rem 0;
+}
+
+@media print {
+  .text-item-readonly,
+  .text-item-readonly * {
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+    overflow: visible !important;
+  }
 }
 /* 可爱滚动条样式 */
 .scrollbar-kawaii {

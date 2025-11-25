@@ -65,6 +65,7 @@ func RegisterRoutes(
 		assetGroup := v1.Group("/assets")
 		assetGroup.Use(authMiddleware)
 		{
+			assetGroup.GET("", assetHandler.ListAssets)
 			assetGroup.POST("/upload", assetHandler.UploadAsset)
 			assetGroup.GET("/view", assetHandler.GetAssetURL)
 		}

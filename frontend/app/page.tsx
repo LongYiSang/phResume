@@ -20,6 +20,7 @@ import { DividerItem } from "@/components/DividerItem";
 import { ImageItem } from "@/components/ImageItem";
 import { TemplatesPanel } from "@/components/TemplatesPanel";
 import { MyResumesPanel } from "@/components/MyResumesPanel";
+import { AssetsPanel } from "@/components/AssetsPanel";
 import { useAuth } from "@/context/AuthContext";
 import { ActiveEditorProvider } from "@/context/ActiveEditorContext";
 import { useAuthFetch } from "@/hooks/useAuthFetch";
@@ -188,9 +189,11 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [taskStatus, setTaskStatus] = useState<TaskStatus>("idle");
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  // const [isUploadingAsset, setIsUploadingAsset] = useState(false);
+  const [isUploadingAsset, setIsUploadingAsset] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [isMyResumesOpen, setIsMyResumesOpen] = useState(false);
+  const [isAssetsOpen, setIsAssetsOpen] = useState(false);
+  const [assetPanelRefreshToken, setAssetPanelRefreshToken] = useState(0);
   const [zoom, setZoom] = useState(1);
   const socketRef = useRef<WebSocket | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -245,6 +248,25 @@ export default function Home() {
       });
     },
     [],
+  );
+
+  const appendImageItem = useCallback(
+    (objectKey: string) => {
+      withHistory((prev) => {
+        const newImage: ResumeItem = {
+          id: uuidv4(),
+          type: "image",
+          content: objectKey,
+          layout: { x: 0, y: 0, w: 6, h: 10 },
+          style: {
+            borderRadius: "0.375rem",
+            objectFit: "cover",
+          },
+        };
+        return { ...prev, items: [...prev.items, newImage] };
+      });
+    },
+    [withHistory],
   );
 
   const fetchDownloadLink = useCallback(
@@ -1049,8 +1071,19 @@ export default function Home() {
       setError("请先登录");
       return;
     }
-    fileInputRef.current?.click();
+    setIsAssetsOpen((prev) => {
+      const next = !prev;
+      if (next) {
+        setIsTemplatesOpen(false);
+        setIsMyResumesOpen(false);
+      }
+      return next;
+    });
   }, [resumeData, isAuthenticated]);
+
+  const handleRequestAssetUpload = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
 
   const handleImageUpload = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1061,6 +1094,12 @@ export default function Home() {
 
       if (!isAuthenticated) {
         setError("请先登录");
+        event.target.value = "";
+        return;
+      }
+
+      if (!resumeDataRef.current) {
+        setError("简历内容尚未加载完成");
         event.target.value = "";
         return;
       }
@@ -1088,30 +1127,8 @@ export default function Home() {
           throw new Error("missing object key");
         }
 
-        setResumeData((prev) => {
-          if (!prev) {
-            return prev;
-          }
-
-          // 使用 withHistory 以记录历史
-          const next = (() => {
-            const newImage: ResumeItem = {
-              id: uuidv4(),
-              type: "image",
-              content: objectKey,
-              layout: { x: 0, y: 0, w: 6, h: 10 },
-              style: {
-                borderRadius: "0.375rem",
-                objectFit: "cover",
-              },
-            };
-            return { ...prev, items: [...prev.items, newImage] };
-          })();
-          // 将 prev 入历史并清空 redo
-          setHistoryStack((hs) => [...hs, deepCloneResumeData(prev)]);
-          setRedoStack([]);
-          return next;
-        });
+        appendImageItem(objectKey);
+        setAssetPanelRefreshToken((token) => token + 1);
       } catch (err) {
         console.error("图片上传失败", err);
         setError("图片上传失败，请重试");
@@ -1120,7 +1137,23 @@ export default function Home() {
         event.target.value = "";
       }
     },
-    [authFetch, isAuthenticated],
+    [authFetch, isAuthenticated, appendImageItem],
+  );
+
+  const handleSelectAssetFromPanel = useCallback(
+    (objectKey: string) => {
+      if (!isAuthenticated) {
+        setError("请先登录");
+        return;
+      }
+      if (!resumeDataRef.current) {
+        setError("简历内容尚未加载完成");
+        return;
+      }
+      appendImageItem(objectKey);
+      setIsAssetsOpen(false);
+    },
+    [appendImageItem, isAuthenticated],
   );
 
   const handleSelectItem = useCallback((itemId: string) => {
@@ -1271,17 +1304,24 @@ export default function Home() {
             onOpenTemplates={() =>
               setIsTemplatesOpen((prev) => {
                 const next = !prev;
-                if (next) setIsMyResumesOpen(false);
+                if (next) {
+                  setIsMyResumesOpen(false);
+                  setIsAssetsOpen(false);
+                }
                 return next;
               })
             }
             onOpenMyResumes={() =>
               setIsMyResumesOpen((prev) => {
                 const next = !prev;
-                if (next) setIsTemplatesOpen(false);
+                if (next) {
+                  setIsTemplatesOpen(false);
+                  setIsAssetsOpen(false);
+                }
                 return next;
               })
             }
+            assetsActive={isAssetsOpen}
             disabled={!resumeData}
           />
         </div>
@@ -1552,6 +1592,15 @@ export default function Home() {
         currentResumeData={resumeData}
         onResumeSelected={handlePanelResumeSelected}
         onResumeDeleted={handlePanelResumeDeleted}
+      />
+      <AssetsPanel
+        isOpen={isAssetsOpen}
+        onClose={() => setIsAssetsOpen(false)}
+        accessToken={accessToken}
+        onSelectAsset={handleSelectAssetFromPanel}
+        onRequestUpload={handleRequestAssetUpload}
+        isUploading={isUploadingAsset}
+        refreshToken={assetPanelRefreshToken}
       />
     </div>
     </ActiveEditorProvider>

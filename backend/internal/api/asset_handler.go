@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -89,6 +91,53 @@ func (h *AssetHandler) UploadAsset(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{"objectKey": objectKey})
+}
+
+// ListAssets 列出用户上传的资产。
+func (h *AssetHandler) ListAssets(c *gin.Context) {
+	userID, ok := userIDFromContext(c)
+	if !ok {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	limitStr := c.DefaultQuery("limit", "60")
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 {
+		limit = 60
+	}
+	if limit > 200 {
+		limit = 200
+	}
+
+	prefix := fmt.Sprintf("user-assets/%d/", userID)
+	objects, err := h.Storage.ListObjects(c.Request.Context(), prefix, limit)
+	if err != nil {
+		h.Logger.Error("list assets", slog.String("error", err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list assets"})
+		return
+	}
+
+	sort.Slice(objects, func(i, j int) bool {
+		return objects[i].LastModified.After(objects[j].LastModified)
+	})
+
+	items := make([]gin.H, 0, len(objects))
+	for _, obj := range objects {
+		url, err := h.Storage.GeneratePresignedURL(c.Request.Context(), obj.Key, 10*time.Minute)
+		if err != nil {
+			h.Logger.Error("generate asset url", slog.String("objectKey", obj.Key), slog.String("error", err.Error()))
+			continue
+		}
+		items = append(items, gin.H{
+			"objectKey":    obj.Key,
+			"previewUrl":   url,
+			"size":         obj.Size,
+			"lastModified": obj.LastModified,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
 // GetAssetURL 返回资产的临时预签名 URL。

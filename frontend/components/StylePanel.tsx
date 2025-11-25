@@ -41,27 +41,33 @@ type FontOption = {
 const FONT_OPTIONS: FontOption[] = [
   {
     label: "Nunito",
-    value: 'var(--font-nunito), "Nunito", "Helvetica Neue", Arial, sans-serif',
+    value:
+      'var(--font-nunito), "Nunito", "Open Sans", "Noto Sans CJK SC", "WenQuanYi Zen Hei", sans-serif',
   },
   {
-    label: "Quicksand",
-    value: 'var(--font-quicksand), "Quicksand", "Trebuchet MS", sans-serif',
+    label: "Open Sans",
+    value:
+      'var(--font-open-sans), "Open Sans", "Helvetica Neue", "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif',
   },
   {
-    label: "Geist Sans",
-    value: 'var(--font-geist-sans), "Inter", "Helvetica Neue", Arial, sans-serif',
+    label: "Roboto Mono",
+    value:
+      'var(--font-roboto-mono), "Roboto Mono", "DejaVu Sans Mono", "FreeMono", monospace',
   },
   {
-    label: "Modern Sans",
-    value: '"Segoe UI", "PingFang SC", "Microsoft YaHei", Arial, sans-serif',
+    label: "Noto Sans CJK",
+    value:
+      'var(--font-noto-sans-sc), "Noto Sans CJK SC", "Noto Sans", "WenQuanYi Zen Hei", "Microsoft YaHei", sans-serif',
   },
   {
-    label: "Classic Serif",
-    value: 'Georgia, "Times New Roman", STSong, "Songti SC", serif',
+    label: "WenQuanYi Zen Hei",
+    value:
+      'var(--font-wqy-zenhei), "WenQuanYi Zen Hei", "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif',
   },
   {
-    label: "Mono",
-    value: '"Fira Mono", "SFMono-Regular", Menlo, Consolas, monospace',
+    label: "DejaVu Serif",
+    value:
+      '"DejaVu Serif", "FreeSerif", serif',
   },
 ];
 
