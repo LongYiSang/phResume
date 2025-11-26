@@ -179,7 +179,7 @@ function deepCloneResumeData(data: ResumeData): ResumeData {
 
 export default function Home() {
   const router = useRouter();
-  const { accessToken, isAuthenticated, isCheckingAuth } = useAuth();
+  const { accessToken, setAccessToken, isAuthenticated, isCheckingAuth } = useAuth();
   const authFetch = useAuthFetch();
   const [title, setTitle] = useState("");
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
@@ -621,6 +621,19 @@ export default function Home() {
       return { ...prev, items: updatedItems };
     });
   }, []);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await authFetch("/api/v1/auth/logout", { method: "POST" });
+    } catch (err) {
+      console.warn("后端登出失败，继续清除前端状态", err);
+    } finally {
+      // 无论后端是否成功，前端都必须清除状态
+      setAccessToken(null);
+      router.push("/login");
+    }
+  }, [authFetch, setAccessToken, router]);
+
 
   const currentColumns =
     resumeData?.layout_settings?.columns ?? GRID_COLS;
@@ -1321,6 +1334,7 @@ export default function Home() {
                 return next;
               })
             }
+            onLogout={handleLogout}
             assetsActive={isAssetsOpen}
             disabled={!resumeData}
           />
