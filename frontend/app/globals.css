@@ -153,6 +153,71 @@ body {
     word-break: break-word !important;
     overflow: visible !important;
   }
+  .print-mask {
+    background: white !important;
+    /* mask 保持不变，依然是中间镂空，四周显示背景（此时背景是白色） */
+    -webkit-mask-composite: xor !important;
+    mask-composite: exclude !important;
+    z-index: 9999 !important;
+  }
+  /* 打印时隐藏提醒文字 */
+  .print-mask::after {
+    display: none !important;
+  }
+}
+
+.print-mask {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-sizing: border-box;
+  z-index: 50;
+  border-width: 0 !important; /* 不再使用边框 */
+  
+  /* 
+    背景：斜线纹理 
+    增加对比度，使用淡红色/灰色混合，起到警示作用
+  */
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(251, 113, 133, 0.15) 0,
+    rgba(251, 113, 133, 0.15) 1px,
+    transparent 0,
+    transparent 8px
+  );
+
+  /* 
+    遮罩：
+    layer1 (content-box): 中间内容区域，黑色（完全不透明）
+    layer2 (border-box): 整体区域，黑色（完全不透明）
+    
+    mask-composite: exclude (xor)
+    整体 - 中间 = 只有四周（即 padding 区域）显示背景
+  */
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box, 
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  
+  /* 为了让 content-box 生效，必须有 padding，这里的 padding 由 style 动态注入 */
+}
+
+/* 提醒文字 */
+.print-mask::after {
+  content: "NO PRINT ZONE";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(251, 113, 133, 1);
+  letter-spacing: 1px;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 2px 4px;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 /* 可爱滚动条样式 */
 .scrollbar-kawaii {

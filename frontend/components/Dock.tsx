@@ -1,6 +1,6 @@
 "use client";
 
-import { Type, Image as ImageIcon, Minus, LayoutTemplate, FolderOpen, User } from "lucide-react";
+import { Type, Image as ImageIcon, Minus, LayoutTemplate, FolderOpen, Settings, User } from "lucide-react";
 
 type DockProps = {
   onAddText: () => void;
@@ -8,11 +8,13 @@ type DockProps = {
   onAddDivider: () => void;
   onOpenTemplates: () => void;
   onOpenMyResumes: () => void;
+  onOpenSettings: () => void;
   onLogout?: () => void;
   disabled?: boolean;
   templatesActive?: boolean;
   savedActive?: boolean;
   assetsActive?: boolean;
+  settingsActive?: boolean;
 };
 
 export default function Dock({
@@ -21,11 +23,13 @@ export default function Dock({
   onAddDivider,
   onOpenTemplates,
   onOpenMyResumes,
+  onOpenSettings,
   onLogout,
   disabled,
   templatesActive,
   savedActive,
   assetsActive,
+  settingsActive,
 }: DockProps) {
   return (
     <div className="bg-white/80 backdrop-blur-xl border border-white/50 rounded-[32px] shadow-soft px-3 py-6 flex flex-col gap-6 transition-all duration-300 hover:shadow-card z-50">
@@ -58,6 +62,7 @@ export default function Dock({
           isActive={Boolean(templatesActive)}
         />
         <DockGhostButton icon={<FolderOpen size={20} />} label="Saved" onClick={onOpenMyResumes} isActive={Boolean(savedActive)} />
+        <DockGhostButton icon={<Settings size={20} />} label="Settings" onClick={onOpenSettings} isActive={Boolean(settingsActive)} />
       </div>
 
       <div className="w-full h-px bg-kawaii-pinkLight" />

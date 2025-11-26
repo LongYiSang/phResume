@@ -18,12 +18,12 @@ export function PageContainer({
     width: `${width}px`,
     height: `${height}px`,
     backgroundColor: "white",
-    boxShadow: "0 20px 40px -10px rgba(251,113,133,0.15)",
     margin: "0 auto",
     position: "relative",
     display: "flex",
     justifyContent: "stretch",
     alignItems: "stretch",
+    overflow: "hidden",
   };
 
   return <div style={{ ...baseStyle, ...style }}>{children}</div>;

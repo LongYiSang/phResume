@@ -21,6 +21,7 @@ import { ImageItem } from "@/components/ImageItem";
 import { TemplatesPanel } from "@/components/TemplatesPanel";
 import { MyResumesPanel } from "@/components/MyResumesPanel";
 import { AssetsPanel } from "@/components/AssetsPanel";
+import { SettingsPanel } from "@/components/SettingsPanel";
 import { useAuth } from "@/context/AuthContext";
 import { ActiveEditorProvider } from "@/context/ActiveEditorContext";
 import { useAuthFetch } from "@/hooks/useAuthFetch";
@@ -193,6 +194,7 @@ export default function Home() {
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [isMyResumesOpen, setIsMyResumesOpen] = useState(false);
   const [isAssetsOpen, setIsAssetsOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [assetPanelRefreshToken, setAssetPanelRefreshToken] = useState(0);
   const [zoom, setZoom] = useState(1);
   const socketRef = useRef<WebSocket | null>(null);
@@ -644,6 +646,7 @@ export default function Home() {
   const scaledCanvasWidth = Math.round(CANVAS_WIDTH * zoom);
   const scaledCanvasHeight = Math.round(CANVAS_HEIGHT * zoom);
   const innerCanvasWidth = Math.max(0, scaledCanvasWidth - layoutMarginPx * 2);
+  const innerCanvasHeight = Math.max(0, scaledCanvasHeight - layoutMarginPx * 2);
 
   const selectedItem = useMemo(() => {
     if (!resumeData || !selectedItemId) {
@@ -1089,6 +1092,7 @@ export default function Home() {
       if (next) {
         setIsTemplatesOpen(false);
         setIsMyResumesOpen(false);
+        setIsSettingsOpen(false);
       }
       return next;
     });
@@ -1320,6 +1324,7 @@ export default function Home() {
                 if (next) {
                   setIsMyResumesOpen(false);
                   setIsAssetsOpen(false);
+                  setIsSettingsOpen(false);
                 }
                 return next;
               })
@@ -1330,12 +1335,25 @@ export default function Home() {
                 if (next) {
                   setIsTemplatesOpen(false);
                   setIsAssetsOpen(false);
+                  setIsSettingsOpen(false);
+                }
+                return next;
+              })
+            }
+            onOpenSettings={() =>
+              setIsSettingsOpen((prev) => {
+                const next = !prev;
+                if (next) {
+                  setIsTemplatesOpen(false);
+                  setIsMyResumesOpen(false);
+                  setIsAssetsOpen(false);
                 }
                 return next;
               })
             }
             onLogout={handleLogout}
             assetsActive={isAssetsOpen}
+            settingsActive={isSettingsOpen}
             disabled={!resumeData}
           />
         </div>
@@ -1439,9 +1457,10 @@ export default function Home() {
                     draggableCancel=".text-item-editor"
                     width={innerCanvasWidth}
                     autoSize={false}
-                    style={{ height: scaledCanvasHeight }}
+                    style={{ height: "100%" }}
                     margin={[0, 0]}
                     containerPadding={[0, 0]}
+                    maxRows={Math.floor(innerCanvasHeight / currentRowHeight)}
                     onLayoutChange={handleLayoutChange}
                     onDragStart={handleDragStart}
                     onDragStop={handleDragStop}
@@ -1561,6 +1580,10 @@ export default function Home() {
                       );
                     })}
                   </RGL>
+                  <div 
+                    className="print-mask" 
+                    style={{ padding: `${layoutMarginPx}px` }}
+                  />
                 </PageContainer>
               </div>
             ) : (
@@ -1615,6 +1638,12 @@ export default function Home() {
         onRequestUpload={handleRequestAssetUpload}
         isUploading={isUploadingAsset}
         refreshToken={assetPanelRefreshToken}
+      />
+      <SettingsPanel
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        layoutSettings={resumeData?.layout_settings}
+        onSettingsChange={handleSettingsChange}
       />
     </div>
     </ActiveEditorProvider>

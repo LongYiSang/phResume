@@ -199,6 +199,16 @@ func renderFrontendPage(logger *slog.Logger, targetURL string) (_ *rod.Page, cle
     #pdf-root * {
       visibility: visible !important;
     }
+    .print-mask {
+      visibility: visible !important;
+      position: absolute !important;
+      inset: 0 !important;
+      border: 1.0cm solid white !important;
+      box-sizing: border-box !important;
+      z-index: 2147483647 !important;
+      pointer-events: none !important;
+      background: transparent !important;
+    }
   }
 `
 	if err := page.AddStyleTag("", cleanupCSS); err != nil {
