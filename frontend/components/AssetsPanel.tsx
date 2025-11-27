@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuthFetch } from "@/hooks/useAuthFetch";
 import { X, Images, Plus } from "lucide-react";
+import { API_ROUTES } from "@/lib/api-routes";
 
 type AssetListItem = {
   objectKey: string;
@@ -51,7 +52,7 @@ export function AssetsPanel({
       setIsLoading(true);
       setError(null);
       try {
-        const resp = await authFetch("/api/v1/assets?limit=60");
+        const resp = await authFetch(API_ROUTES.ASSETS.list({ limit: 60 }));
         if (!resp.ok) {
           throw new Error(`list assets failed: ${resp.status}`);
         }

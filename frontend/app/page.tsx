@@ -32,6 +32,7 @@ import {
   GRID_ROW_HEIGHT,
   normalizeResumeContent,
 } from "@/utils/resume";
+import { API_ROUTES } from "@/lib/api-routes";
 import { applyOpacityToColor, extractBackgroundStyle } from "@/utils/color";
 import type {
   LayoutSettings,
@@ -283,7 +284,7 @@ export default function Home() {
 
       try {
         const response = await authFetch(
-          `/api/v1/resume/${resumeId}/download-link`,
+          API_ROUTES.RESUME.downloadLink(resumeId),
         );
 
         if (!response.ok) {
@@ -313,17 +314,7 @@ export default function Home() {
   }, [isAuthenticated, isCheckingAuth, router]);
 
   const resolveWebSocketURL = useCallback(() => {
-    if (typeof window === "undefined") {
-      return null;
-    }
-    const envURL = process.env.NEXT_PUBLIC_WS_URL;
-    if (envURL && envURL.length > 0) {
-      return envURL;
-    }
-
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host;
-    return `${protocol}//${host}/api/v1/ws`;
+    return API_ROUTES.resolveWsUrl();
   }, []);
 
   useEffect(() => {
@@ -384,7 +375,7 @@ export default function Home() {
     setError(null);
 
     try {
-      const response = await authFetch("/api/v1/resume/latest");
+      const response = await authFetch(API_ROUTES.RESUME.latest());
 
       if (!response.ok) {
         throw new Error("failed to fetch latest resume");
@@ -435,26 +426,26 @@ export default function Home() {
     let method: "POST" | "PUT" = "POST";
     const resumeIdForUpdate: number | null = savedResumeId;
 
-    if (resumeIdForUpdate === null) {
-      const inputTitle = window.prompt("请输入新简历标题", title || "我的简历");
-      if (inputTitle === null) {
-        return;
+      if (resumeIdForUpdate === null) {
+        const inputTitle = window.prompt("请输入新简历标题", title || "我的简历");
+        if (inputTitle === null) {
+          return;
+        }
+        targetTitle = inputTitle.trim();
+        if (!targetTitle) {
+          setError("简历标题不能为空");
+          return;
+        }
+        endpoint = API_ROUTES.RESUME.create();
+        method = "POST";
+      } else {
+        if (!targetTitle) {
+          setError("简历标题不能为空");
+          return;
+        }
+        endpoint = API_ROUTES.RESUME.update(resumeIdForUpdate);
+        method = "PUT";
       }
-      targetTitle = inputTitle.trim();
-      if (!targetTitle) {
-        setError("简历标题不能为空");
-        return;
-      }
-      endpoint = "/api/v1/resume";
-      method = "POST";
-    } else {
-      if (!targetTitle) {
-        setError("简历标题不能为空");
-        return;
-      }
-      endpoint = `/api/v1/resume/${resumeIdForUpdate}`;
-      method = "PUT";
-    }
 
     setIsLoading(true);
 
@@ -512,7 +503,7 @@ export default function Home() {
 
     try {
       const response = await authFetch(
-        `/api/v1/resume/${savedResumeId}/download`,
+        API_ROUTES.RESUME.download(savedResumeId),
       );
 
       if (!response.ok) {
@@ -626,7 +617,8 @@ export default function Home() {
 
   const handleLogout = useCallback(async () => {
     try {
-      await authFetch("/api/v1/auth/logout", { method: "POST" });
+      const { API_ROUTES } = await import("@/lib/api-routes");
+      await authFetch(API_ROUTES.AUTH.logout(), { method: "POST" });
     } catch (err) {
       console.warn("后端登出失败，继续清除前端状态", err);
     } finally {
@@ -1128,7 +1120,8 @@ export default function Home() {
       formData.append("file", file);
 
       try {
-        const response = await authFetch("/api/v1/assets/upload", {
+        const { API_ROUTES } = await import("@/lib/api-routes");
+        const response = await authFetch(API_ROUTES.ASSETS.upload(), {
           method: "POST",
           body: formData,
         });

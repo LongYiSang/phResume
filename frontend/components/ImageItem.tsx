@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useAuthFetch } from "@/hooks/useAuthFetch";
+import { API_ROUTES } from "@/lib/api-routes";
 
 type ImageItemProps = {
   objectKey?: string;
@@ -37,9 +38,7 @@ export function ImageItem({ objectKey, style, preSignedURL }: ImageItemProps) {
     const fetchImageURL = async () => {
       setIsLoading(true);
       try {
-        const response = await authFetch(
-          `/api/v1/assets/view?key=${encodeURIComponent(objectKey)}`,
-        );
+        const response = await authFetch(API_ROUTES.ASSETS.view(objectKey));
 
         if (!response.ok) {
           throw new Error("failed to fetch presigned url");

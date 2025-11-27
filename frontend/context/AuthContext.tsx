@@ -38,7 +38,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     refreshPromiseRef.current = (async () => {
       try {
-        const response = await fetch("/api/v1/auth/refresh", {
+        const { API_ROUTES } = await import("@/lib/api-routes");
+        const response = await fetch(API_ROUTES.AUTH.refresh(), {
           method: "POST",
           credentials: "include",
         });

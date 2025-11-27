@@ -37,7 +37,8 @@ export function TemplatesPanel({
   const authFetch = useAuthFetch();
   const canInteract = useMemo(() => Boolean(accessToken), [accessToken]);
   const refreshTemplates = async () => {
-    const resp = await authFetch("/api/v1/templates");
+    const { API_ROUTES } = await import("@/lib/api-routes");
+    const resp = await authFetch(API_ROUTES.TEMPLATES.list());
     if (!resp.ok) {
       return;
     }
@@ -56,7 +57,8 @@ export function TemplatesPanel({
       setIsLoading(true);
       setError(null);
       try {
-        const resp = await authFetch("/api/v1/templates");
+        const { API_ROUTES } = await import("@/lib/api-routes");
+        const resp = await authFetch(API_ROUTES.TEMPLATES.list());
         if (!resp.ok) {
           throw new Error("list templates failed");
         }
@@ -86,7 +88,8 @@ export function TemplatesPanel({
     }
     setError(null);
     try {
-      const resp = await authFetch(`/api/v1/templates/${id}`);
+      const { API_ROUTES } = await import("@/lib/api-routes");
+      const resp = await authFetch(API_ROUTES.TEMPLATES.byId(id));
       if (!resp.ok) {
         throw new Error("get template failed");
       }
@@ -123,7 +126,8 @@ export function TemplatesPanel({
     }
     setError(null);
     try {
-      const resp = await authFetch("/api/v1/templates", {
+      const { API_ROUTES } = await import("@/lib/api-routes");
+      const resp = await authFetch(API_ROUTES.TEMPLATES.create(), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -158,7 +162,8 @@ export function TemplatesPanel({
     setError(null);
     setPreviewLoadingMap((prev) => ({ ...prev, [id]: true }));
     try {
-      const resp = await authFetch(`/api/v1/templates/${id}/generate-preview`, {
+      const { API_ROUTES } = await import("@/lib/api-routes");
+      const resp = await authFetch(API_ROUTES.TEMPLATES.generatePreview(id), {
         method: "POST",
       });
       if (!resp.ok) {
@@ -187,7 +192,8 @@ export function TemplatesPanel({
     if (!confirmed) return;
     setError(null);
     try {
-      const resp = await authFetch(`/api/v1/templates/${id}`, {
+      const { API_ROUTES } = await import("@/lib/api-routes");
+      const resp = await authFetch(API_ROUTES.TEMPLATES.delete(id), {
         method: "DELETE",
       });
       if (!resp.ok && resp.status !== 204) {

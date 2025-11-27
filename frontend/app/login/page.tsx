@@ -40,7 +40,8 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch("/api/v1/auth/login", {
+      const { API_ROUTES } = await import("@/lib/api-routes");
+      const response = await fetch(API_ROUTES.AUTH.login(), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

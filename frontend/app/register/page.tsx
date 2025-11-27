@@ -22,7 +22,8 @@ export default function RegisterPage() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch("/api/v1/auth/register", {
+      const { API_ROUTES } = await import("@/lib/api-routes");
+      const response = await fetch(API_ROUTES.AUTH.register(), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

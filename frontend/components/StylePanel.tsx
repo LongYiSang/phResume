@@ -5,6 +5,7 @@ import type { LayoutSettings } from "@/types/resume";
 import { Select, SelectItem, Slider, Input, Button, type Selection } from "@heroui/react";
 
 import { Droplets, Pipette } from "lucide-react";
+import { API_ROUTES } from "@/lib/api-routes";
 
 type StylePanelProps = {
   settings: LayoutSettings;
@@ -216,7 +217,7 @@ export function StylePanel({
         return;
       }
       try {
-        const resp = await fetch(`/api/v1/assets/view?key=${encodeURIComponent(selectedItemContent)}`);
+        const resp = await fetch(API_ROUTES.ASSETS.view(selectedItemContent));
         if (!resp.ok) return;
         const data = await resp.json();
         if (mounted) setImagePreviewURL(typeof data?.url === "string" ? data.url : null);

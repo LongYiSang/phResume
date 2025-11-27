@@ -25,8 +25,7 @@ const DEFAULT_LAYOUT_SETTINGS = {
   font_size_pt: 10,
   margin_px: 30,
 };
-const INTERNAL_API_BASE =
-  process.env.NEXT_PUBLIC_INTERNAL_API_URL ?? "/api";
+import { API_ROUTES } from "@/lib/api-routes";
 
 type ItemLayout = ResumeItem["layout"];
 
@@ -67,15 +66,14 @@ export function PrintView({ resourcePath }: PrintViewProps) {
       setIsRendered(false);
 
       try {
-        const response = await fetch(
-          `${INTERNAL_API_BASE}/v1/${resourcePath}/${resourceId}?internal_token=${encodeURIComponent(
-            internalToken,
-          )}`,
-          {
-            cache: "no-store",
-            signal: controller.signal,
-          },
-        );
+        const url =
+          resourcePath === "resume/print"
+            ? API_ROUTES.PRINT.resume(resourceId!, internalToken)
+            : API_ROUTES.PRINT.template(resourceId!, internalToken);
+        const response = await fetch(url, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
 
         if (!response.ok) {
           throw new Error(`failed to fetch print data: ${response.status}`);

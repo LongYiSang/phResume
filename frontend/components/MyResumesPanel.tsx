@@ -59,7 +59,8 @@ export function MyResumesPanel({
       setIsLoading(true);
       setError(null);
       try {
-        const resp = await authFetch("/api/v1/resume");
+        const { API_ROUTES } = await import("@/lib/api-routes");
+        const resp = await authFetch(API_ROUTES.RESUME.list());
         if (!resp.ok) {
           throw new Error(`list resumes failed: ${resp.status}`);
         }
@@ -87,7 +88,8 @@ export function MyResumesPanel({
   const refreshList = async () => {
     if (!accessToken) return;
     try {
-      const resp = await authFetch("/api/v1/resume");
+      const { API_ROUTES } = await import("@/lib/api-routes");
+      const resp = await authFetch(API_ROUTES.RESUME.list());
       if (!resp.ok) {
         throw new Error("reload list failed");
       }
@@ -112,7 +114,8 @@ export function MyResumesPanel({
     setActionLoading(true);
     setError(null);
     try {
-      const resp = await authFetch("/api/v1/resume", {
+      const { API_ROUTES } = await import("@/lib/api-routes");
+      const resp = await authFetch(API_ROUTES.RESUME.create(), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -163,7 +166,8 @@ export function MyResumesPanel({
     setActionLoading(true);
     setError(null);
     try {
-      const resp = await authFetch(`/api/v1/resume/${id}`);
+      const { API_ROUTES } = await import("@/lib/api-routes");
+      const resp = await authFetch(API_ROUTES.RESUME.byId(id));
       if (!resp.ok) {
         throw new Error(`get resume failed: ${resp.status}`);
       }
@@ -201,7 +205,8 @@ export function MyResumesPanel({
     setActionLoading(true);
     setError(null);
     try {
-      const resp = await authFetch(`/api/v1/resume/${id}`, {
+      const { API_ROUTES } = await import("@/lib/api-routes");
+      const resp = await authFetch(API_ROUTES.RESUME.delete(id), {
         method: "DELETE",
       });
       if (!resp.ok && resp.status !== 204) {
