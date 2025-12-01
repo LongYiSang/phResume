@@ -32,6 +32,8 @@ type StylePanelProps = {
   onImageZoomChange?: (scale: number) => void;
   onImageFocusChange?: (xPercent: number, yPercent: number) => void;
   onImageZoomReset?: () => void;
+  selectedBorderRadius?: number | null;
+  onBorderRadiusChange?: (value: number) => void;
 };
 
 type FontOption = {
@@ -110,6 +112,8 @@ export function StylePanel({
   onImageZoomChange,
   onImageFocusChange,
   onImageZoomReset,
+  selectedBorderRadius,
+  onBorderRadiusChange,
 }: StylePanelProps) {
   const handleChange = (
     key: "accent_color" | "font_family" | "font_size_pt",
@@ -165,7 +169,8 @@ export function StylePanel({
   };
 
   const isTextSelected =
-    selectedItemType === "text" && selectedItemFontSize !== null && selectedItemColor !== null;
+    selectedItemType === "text" || selectedItemType === "section_title";
+  const isSectionTitleSelected = selectedItemType === "section_title";
   const isDividerSelected = selectedItemType === "divider";
   const isImageSelected = selectedItemType === "image" && typeof selectedItemContent === "string" && selectedItemContent.length > 0;
   const currentColor = selectedItemColor ?? settings.accent_color ?? "#1f2937";
@@ -364,7 +369,6 @@ export function StylePanel({
                 maxValue={32}
                 step={1}
                 value={selectedItemFontSize ?? settings.font_size_pt}
-                isDisabled={selectedItemFontSize === null}
                 onChange={(val) =>
                   typeof val === "number" && onSelectedItemFontSizeChange(val)
                 }
@@ -410,6 +414,24 @@ export function StylePanel({
             </div>
           ) : null}
 
+          {isSectionTitleSelected ? (
+            <div className="flex flex-col gap-2 animate-in fade-in slide-in-from-bottom-1 duration-300">
+              <Slider
+                label="顶部圆角（px）"
+                minValue={0}
+                maxValue={24}
+                step={1}
+                value={selectedBorderRadius ?? 0}
+                onChange={(val) =>
+                  typeof val === "number" && onBorderRadiusChange?.(val)
+                }
+              />
+              <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                当前：{selectedBorderRadius ?? 0}px
+              </div>
+            </div>
+          ) : null}
+
           {!selectedItemType && (
             <div className="mt-12 flex flex-col items-center justify-center gap-3 text-center">
               <div className="h-20 w-20 rounded-full bg-kawaii-purpleLight" />
@@ -418,7 +440,7 @@ export function StylePanel({
             </div>
           )}
 
-          {isTextSelected ? (
+          {selectedItemType === "text" ? (
             <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-1 duration-300">
               <div className="flex items-center gap-2">
                 <Button radius="full" variant="bordered" size="sm" onPress={() => onFormatText?.("bold")}>B</Button>

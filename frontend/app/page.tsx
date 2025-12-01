@@ -16,6 +16,7 @@ import { PageContainer } from "@/components/PageContainer";
 import Inspector from "@/components/Inspector";
 import Dock from "@/components/Dock";
 import { TextItem } from "@/components/TextItem";
+import { SectionTitleItem } from "@/components/SectionTitleItem";
 import { DividerItem } from "@/components/DividerItem";
 import { ImageItem } from "@/components/ImageItem";
 import { TemplatesPanel } from "@/components/TemplatesPanel";
@@ -677,7 +678,7 @@ export default function Home() {
   const selectedItemFontFamily = useMemo(() => {
     if (
       !selectedItem ||
-      selectedItem.type !== "text" ||
+      (selectedItem.type !== "text" && selectedItem.type !== "section_title") ||
       !resumeData?.layout_settings
     ) {
       return null;
@@ -726,6 +727,16 @@ export default function Home() {
     }
     const { color } = extractBackgroundStyle(selectedItem.style);
     return color ?? null;
+  }, [selectedItem]);
+
+  const selectedBorderRadius = useMemo(() => {
+    if (!selectedItem || selectedItem.type !== "section_title") {
+      return null;
+    }
+    const radius = selectedItem.style?.borderTopLeftRadius;
+    if (typeof radius === "number") return radius;
+    if (typeof radius === "string") return parseFloat(radius) || 0;
+    return 0;
   }, [selectedItem]);
 
   const selectedItemBackgroundOpacity = useMemo(() => {
@@ -819,6 +830,11 @@ export default function Home() {
           nextStyle.backgroundColor = trimmed;
           nextStyle.backgroundOpacity =
             existingOpacity ?? DEFAULT_BACKGROUND_OPACITY;
+          
+          if (item.type === "section_title") {
+            nextStyle.borderColor = trimmed;
+          }
+
           return {
             ...item,
             style: nextStyle,
@@ -895,6 +911,28 @@ export default function Home() {
                 style: {
                   ...(item.style ?? {}),
                   fontFamily,
+                },
+              },
+        );
+        return { ...prev, items: updatedItems };
+      });
+    },
+    [selectedItemId, withHistory],
+  );
+
+  const handleBorderRadiusChange = useCallback(
+    (radius: number) => {
+      if (!selectedItemId) return;
+      withHistory((prev) => {
+        const updatedItems = prev.items.map((item) =>
+          item.id !== selectedItemId
+            ? item
+            : {
+                ...item,
+                style: {
+                  ...(item.style ?? {}),
+                  borderTopLeftRadius: radius,
+                  borderTopRightRadius: radius,
                 },
               },
         );
@@ -991,6 +1029,35 @@ export default function Home() {
     const y = Math.max(0, Math.floor(usedHeight / 2) - Math.floor(h / 2));
     return { x, y };
   }
+
+  const handleAddSectionTitle = useCallback(() => {
+    if (!resumeData) {
+      setError("简历内容尚未加载完成");
+      return;
+    }
+    const defaultW = 24;
+    const defaultH = 3;
+    const accentColor =
+      resumeData.layout_settings?.accent_color ??
+      DEFAULT_LAYOUT_SETTINGS.accent_color;
+
+    withHistory((prev) => {
+      const pos = computeCenteredPosition(prev, defaultW, defaultH);
+      const newItem: ResumeItem = {
+        id: uuidv4(),
+        type: "section_title",
+        content: "分节标题",
+        layout: { x: pos.x, y: pos.y, w: defaultW, h: defaultH },
+        style: {
+          fontSize: `${(prev.layout_settings?.font_size_pt ?? DEFAULT_LAYOUT_SETTINGS.font_size_pt) + 2}pt`,
+          backgroundColor: accentColor,
+          color: "#ffffff",
+          borderColor: accentColor,
+        },
+      };
+      return { ...prev, items: [...prev.items, newItem] };
+    });
+  }, [resumeData, withHistory]);
 
   const handleAddText = useCallback(() => {
     if (!resumeData) {
@@ -1309,6 +1376,7 @@ export default function Home() {
         <div className="fixed left-6 top-1/2 -translate-y-1/2 z-40">
           <Dock
             onAddText={handleAddText}
+            onAddSectionTitle={handleAddSectionTitle}
             onAddImage={handleAddImageClick}
             onAddDivider={handleAddDivider}
             onOpenTemplates={() =>
@@ -1365,7 +1433,11 @@ export default function Home() {
               styleSettings={resumeData.layout_settings}
               onStyleSettingsChange={handleSettingsChange}
               selectedItemType={selectedItem?.type ?? null}
-              selectedItemFontSize={selectedItem?.type === "text" ? selectedItemFontSize : null}
+              selectedItemFontSize={
+                selectedItem?.type === "text" || selectedItem?.type === "section_title"
+                  ? selectedItemFontSize
+                  : null
+              }
               onSelectedItemFontSizeChange={handleItemFontSizeChange}
               selectedItemColor={
                 selectedItem?.type === "text" || selectedItem?.type === "divider"
@@ -1374,7 +1446,9 @@ export default function Home() {
               }
               onSelectedItemColorChange={handleItemColorChange}
               selectedItemFontFamily={
-                selectedItem?.type === "text" ? selectedItemFontFamily : null
+                selectedItem?.type === "text" || selectedItem?.type === "section_title"
+                  ? selectedItemFontFamily
+                  : null
               }
               onSelectedItemFontFamilyChange={handleItemFontFamilyChange}
               selectedDividerThickness={
@@ -1388,10 +1462,13 @@ export default function Home() {
               selectedImageFocus={
                 selectedItem?.type === "image" ? selectedImageFocus : null
               }
+              selectedBorderRadius={selectedBorderRadius}
               selectedItemBackgroundColor={selectedItemBackgroundColor}
               selectedItemBackgroundOpacity={selectedItemBackgroundOpacity}
               onBackgroundColorChange={handleItemBackgroundColorChange}
               onBackgroundOpacityChange={handleItemBackgroundOpacityChange}
+              onDividerThicknessChange={handleDividerThicknessChange}
+              onBorderRadiusChange={handleBorderRadiusChange}
               onImageZoomChange={handleImageZoomChange}
               onImageFocusChange={handleImageFocusChange}
               onImageZoomReset={handleImageZoomReset}
@@ -1495,14 +1572,17 @@ export default function Home() {
                           : hasCustomBackground
                             ? "rgba(255,255,255,0.7)"
                             : "rgba(226, 232, 240, 0.9)";
+                      const isSectionTitle = item.type === "section_title";
                       const cellStyle: CSSProperties = {
                         padding: item.type === "image" ? "8px" : "12px",
-                        backgroundColor:
-                          resolvedBackgroundColor ?? "rgba(255,255,255,0.92)",
+                        backgroundColor: isSectionTitle
+                          ? "transparent"
+                          : resolvedBackgroundColor ?? "rgba(255,255,255,0.92)",
                         // 共享到内层：让文本编辑器与内容区域继承同样背景
                         // 使用索引签名为 CSS 自定义变量赋值
-                        ["--cell-bg" as unknown as string]:
-                          resolvedBackgroundColor ?? "rgba(255,255,255,0.92)",
+                        ["--cell-bg" as unknown as string]: isSectionTitle
+                          ? "transparent"
+                          : resolvedBackgroundColor ?? "rgba(255,255,255,0.92)",
                         borderColor,
                         borderStyle: hasCustomBackground ? "solid" : "dashed",
                         borderWidth: isSelected || isOverlapped ? 2 : 1,
@@ -1551,6 +1631,17 @@ export default function Home() {
                             />
                           )}
 
+                          {item.type === "section_title" && (
+                            <SectionTitleItem
+                              html={item.content}
+                              style={baseStyle}
+                              onChange={(newHtml) =>
+                                handleContentChange(item.id, newHtml)
+                              }
+                              accentColor={resumeData.layout_settings.accent_color}
+                            />
+                          )}
+
                           {item.type === "divider" && (
                             <DividerItem style={dividerStyle} />
                           )}
@@ -1564,7 +1655,8 @@ export default function Home() {
 
                           {item.type !== "text" &&
                             item.type !== "divider" &&
-                            item.type !== "image" && (
+                            item.type !== "image" &&
+                            item.type !== "section_title" && (
                               <div className="text-xs text-red-500">
                                 暂不支持的类型：{item.type}
                               </div>

@@ -1,9 +1,11 @@
 "use client";
 
-import { Type, Image as ImageIcon, Minus, LayoutTemplate, FolderOpen, Settings, User } from "lucide-react";
+import { Type, Image as ImageIcon, Minus, LayoutTemplate, FolderOpen, Settings, User, Heading } from "lucide-react";
+import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
 
 type DockProps = {
   onAddText: () => void;
+  onAddSectionTitle: () => void;
   onAddImage: () => void;
   onAddDivider: () => void;
   onOpenTemplates: () => void;
@@ -19,6 +21,7 @@ type DockProps = {
 
 export default function Dock({
   onAddText,
+  onAddSectionTitle,
   onAddImage,
   onAddDivider,
   onOpenTemplates,
@@ -39,7 +42,42 @@ export default function Dock({
 
       <div className="flex flex-col gap-3">
         <div className="text-[10px] font-bold text-center text-kawaii-text/40 uppercase tracking-wider">Add</div>
-        <DockButton icon={<Type size={22} />} label="Text" onClick={onAddText} disabled={disabled} colorClass="text-kawaii-blue" />
+        
+        <Dropdown placement="right-start" offset={10}>
+          <DropdownTrigger>
+            <button
+              type="button"
+              disabled={disabled}
+              className="group relative flex flex-col items-center justify-center w-14 h-14 mx-auto transition-all duration-200 active:scale-95 disabled:opacity-50 outline-none"
+            >
+              <div className="relative z-10 flex items-center justify-center w-10 h-10 rounded-xl bg-white shadow-sm transition-all duration-300 ease-out group-hover:-translate-y-1 group-hover:shadow-md group-hover:scale-105">
+                <span className="text-kawaii-blue"><Type size={22} /></span>
+              </div>
+              <span className="pointer-events-none text-[9px] font-bold text-kawaii-text/70 mt-1 opacity-0 translate-y-1 scale-95 transition-all duration-300 ease-out group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100">
+                Text
+              </span>
+            </button>
+          </DropdownTrigger>
+          <DropdownMenu aria-label="Text Actions" className="p-2 bg-white/90 backdrop-blur-xl border border-white/60 rounded-xl shadow-card w-[180px]">
+            <DropdownItem
+              key="text"
+              startContent={<Type size={18} className="text-kawaii-blue" />}
+              onPress={onAddText}
+              className="rounded-lg data-[hover=true]:bg-kawaii-blue/10 data-[hover=true]:text-kawaii-blue"
+            >
+              普通文本
+            </DropdownItem>
+            <DropdownItem
+              key="section_title"
+              startContent={<Heading size={18} className="text-kawaii-purple" />}
+              onPress={onAddSectionTitle}
+              className="rounded-lg data-[hover=true]:bg-kawaii-purple/10 data-[hover=true]:text-kawaii-purple"
+            >
+              分节标题
+            </DropdownItem>
+          </DropdownMenu>
+        </Dropdown>
+
         <DockButton
           icon={<ImageIcon size={22} />}
           label="Image"

@@ -47,6 +47,8 @@ type InspectorProps = {
   onImageZoomChange?: (scale: number) => void;
   onImageFocusChange?: (xPercent: number, yPercent: number) => void;
   onImageZoomReset?: () => void;
+  selectedBorderRadius?: number | null;
+  onBorderRadiusChange?: (value: number) => void;
   zoom: number;
   setZoom: React.Dispatch<React.SetStateAction<number>>;
 };
@@ -64,7 +66,7 @@ function HeaderButton({ children, onClick, disabled }: { children: React.ReactNo
   );
 }
 
-export default function Inspector({ title, onUpdateTitle, onSave, onDownload, historyCanUndo, historyCanRedo, onUndo, onRedo, styleSettings, onStyleSettingsChange, selectedItemType, selectedItemFontSize, onSelectedItemFontSizeChange, selectedItemColor, onSelectedItemColorChange, selectedItemFontFamily, selectedItemContent, selectedItemBackgroundColor, selectedItemBackgroundOpacity, selectedDividerThickness, selectedImageScalePercent, selectedImageFocus, onSelectedItemFontFamilyChange, onBackgroundColorChange, onBackgroundOpacityChange, onDividerThicknessChange, onDeleteSelected, onFormatText, onAlignElement, onListToggle, onImageZoomChange, onImageFocusChange, onImageZoomReset, zoom, setZoom }: InspectorProps) {
+export default function Inspector({ title, onUpdateTitle, onSave, onDownload, historyCanUndo, historyCanRedo, onUndo, onRedo, styleSettings, onStyleSettingsChange, selectedItemType, selectedItemFontSize, onSelectedItemFontSizeChange, selectedItemColor, onSelectedItemColorChange, selectedItemFontFamily, selectedItemContent, selectedItemBackgroundColor, selectedItemBackgroundOpacity, selectedDividerThickness, selectedImageScalePercent, selectedImageFocus, selectedBorderRadius, onBorderRadiusChange, onSelectedItemFontFamilyChange, onBackgroundColorChange, onBackgroundOpacityChange, onDividerThicknessChange, onDeleteSelected, onFormatText, onAlignElement, onListToggle, onImageZoomChange, onImageFocusChange, onImageZoomReset, zoom, setZoom }: InspectorProps) {
   const { activeEditor } = useActiveEditor();
 
 
@@ -137,6 +139,8 @@ export default function Inspector({ title, onUpdateTitle, onSave, onDownload, hi
           onImageZoomChange={onImageZoomChange}
           onImageFocusChange={onImageFocusChange}
           onImageZoomReset={onImageZoomReset}
+          selectedBorderRadius={selectedBorderRadius}
+          onBorderRadiusChange={onBorderRadiusChange}
         />
       </div>
 

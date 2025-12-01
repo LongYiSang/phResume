@@ -9,6 +9,7 @@ import {
 import { useParams, useSearchParams } from "next/navigation";
 import { PageContainer } from "@/components/PageContainer";
 import { TextItem } from "@/components/TextItem";
+import { SectionTitleItem } from "@/components/SectionTitleItem";
 import { ImageItem } from "@/components/ImageItem";
 import { DividerItem } from "@/components/DividerItem";
 import type { ResumeData, ResumeItem } from "@/types/resume";
@@ -151,16 +152,17 @@ export function PrintView({ resourcePath }: PrintViewProps) {
               backgroundMeta.color && backgroundMeta.color.trim().length > 0 &&
               ((typeof backgroundMeta.opacity === "number" ? backgroundMeta.opacity : 1) > 0)
             );
+            const isSectionTitle = item.type === "section_title";
             const commonCellStyle: CSSProperties = {
               gridColumn: `${resolvedLayout.x + 1} / span ${resolvedLayout.w}`,
               gridRow: `${resolvedLayout.y + 1} / span ${resolvedLayout.h}`,
               padding: "12px",
               borderRadius: "20px",
-              backgroundColor: containerBackground,
+              backgroundColor: isSectionTitle ? "transparent" : containerBackground,
               minWidth: 0,
               boxSizing: "border-box",
               border:
-                item.type === "text" && !hasCustomBackground
+                (item.type === "text" || isSectionTitle) && !hasCustomBackground
                   ? "none"
                   : "1px solid rgba(226, 232, 240, 0.7)",
             };
@@ -183,6 +185,19 @@ export function PrintView({ resourcePath }: PrintViewProps) {
                     html={item.content}
                     style={baseTextStyle}
                     readOnly
+                  />
+                </div>
+              );
+            }
+
+            if (item.type === "section_title") {
+              return (
+                <div key={item.id} style={commonCellStyle}>
+                  <SectionTitleItem
+                    html={item.content}
+                    style={baseTextStyle}
+                    readOnly
+                    accentColor={layoutSettings.accent_color}
                   />
                 </div>
               );
