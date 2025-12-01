@@ -62,7 +62,7 @@ export function SectionTitleItem({
   const textBlockStyle: CSSProperties = {
     backgroundColor: backgroundColor,
     color: textColor,
-    padding: "4px 12px",
+    padding: "2px 12px",
     minWidth: "100px", // 最小宽度
     flexShrink: 0, // 不允许压缩
     position: "relative",
