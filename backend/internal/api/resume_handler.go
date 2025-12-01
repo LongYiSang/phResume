@@ -535,7 +535,7 @@ func defaultResumeContent() datatypes.JSON {
 		"accent_color":  "#3388ff",
 		"font_family":   "Arial",
 		"font_size_pt":  10,
-		"margin_px":     30,
+		"margin_px":     36,
 	}
 
 	items := []map[string]any{

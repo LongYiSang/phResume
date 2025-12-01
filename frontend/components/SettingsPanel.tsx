@@ -16,7 +16,7 @@ export function SettingsPanel({
   layoutSettings,
   onSettingsChange,
 }: SettingsPanelProps) {
-  const [margin, setMargin] = useState(38); // Default 1.0cm ≈ 38px
+  const [margin, setMargin] = useState(36); // Default 1.0cm ≈ 36px
 
   useEffect(() => {
     if (layoutSettings?.margin_px !== undefined) {
@@ -69,7 +69,7 @@ export function SettingsPanel({
             <Slider 
               size="sm"
               step={1}
-              minValue={0}
+              minValue={18}
               maxValue={113} // approx 3cm
               value={margin}
               onChange={handleMarginChange}
