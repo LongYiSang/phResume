@@ -48,7 +48,7 @@ type registerRequest struct {
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req registerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		BadRequest(c, err.Error())
 		return
 	}
 
@@ -60,18 +60,18 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	var existing database.User
 	if err := h.db.WithContext(ctx).Where("username = ?", req.Username).First(&existing).Error; err == nil {
 		logger.Info("register conflict: user already exists")
-		c.JSON(http.StatusConflict, gin.H{"error": "username already taken"})
+		Conflict(c, "username already taken")
 		return
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		logger.Error("register lookup failed", slog.Any("error", err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		Internal(c, "internal error")
 		return
 	}
 
 	hashed, err := h.authService.HashPassword(req.Password)
 	if err != nil {
 		logger.Error("hash password failed", slog.Any("error", err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		Internal(c, "internal error")
 		return
 	}
 
@@ -82,7 +82,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	if err := h.db.WithContext(ctx).Create(&user).Error; err != nil {
 		logger.Error("create user failed", slog.Any("error", err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		Internal(c, "internal error")
 		return
 	}
 
@@ -99,7 +99,7 @@ type loginRequest struct {
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req loginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		BadRequest(c, err.Error())
 		return
 	}
 
@@ -112,24 +112,24 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if err := h.db.WithContext(ctx).Where("username = ?", req.Username).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			logger.Info("login failed: user not found")
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+			Unauthorized(c)
 			return
 		}
 		logger.Error("login query failed", slog.Any("error", err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		Internal(c, "internal error")
 		return
 	}
 
 	if !h.authService.CheckPasswordHash(req.Password, user.PasswordHash) {
 		logger.Info("login failed: password mismatch", slog.Uint64("user_id", uint64(user.ID)))
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+		Unauthorized(c)
 		return
 	}
 
 	tokenPair, err := h.authService.GenerateTokenPair(user.ID)
 	if err != nil {
 		logger.Error("generate token pair failed", slog.Any("error", err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		Internal(c, "internal error")
 		return
 	}
 
@@ -150,7 +150,7 @@ type refreshRequest struct {
 func (h *AuthHandler) Refresh(c *gin.Context) {
 	refreshToken := h.extractRefreshToken(c)
 	if refreshToken == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "refresh token missing"})
+		Unauthorized(c)
 		return
 	}
 
@@ -160,43 +160,43 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 	claims, err := h.authService.ValidateToken(refreshToken)
 	if err != nil {
 		logger.Info("refresh token invalid", slog.Any("error", err))
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid refresh token"})
+		Unauthorized(c)
 		return
 	}
 	if claims.TokenType != "refresh" {
 		logger.Info("refresh token wrong type", slog.String("token_type", claims.TokenType))
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid refresh token"})
+		Unauthorized(c)
 		return
 	}
 
 	if claims.ID == "" {
 		logger.Info("refresh token missing jti")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid refresh token"})
+		Unauthorized(c)
 		return
 	}
 
 	key := refreshTokenBlacklistKeyPrefix + claims.ID
 	if err := h.redis.Get(ctx, key).Err(); err == nil {
 		logger.Info("refresh token revoked", slog.String("jti", claims.ID))
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "refresh token revoked"})
+		Unauthorized(c)
 		return
 	} else if !errors.Is(err, redis.Nil) {
 		logger.Error("refresh token blacklist lookup failed", slog.Any("error", err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		Internal(c, "internal error")
 		return
 	}
 
 	tokenPair, err := h.authService.GenerateTokenPair(claims.UserID)
 	if err != nil {
 		logger.Error("refresh generate token pair failed", slog.Any("error", err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		Internal(c, "internal error")
 		return
 	}
 
 	// 旋转旧刷新令牌，防止重复使用。
 	if err := h.revokeRefreshToken(ctx, key, claims.ExpiresAt); err != nil {
 		logger.Error("refresh revoke old token failed", slog.Any("error", err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		Internal(c, "internal error")
 		return
 	}
 
@@ -213,7 +213,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 func (h *AuthHandler) Logout(c *gin.Context) {
 	refreshToken := h.extractRefreshToken(c)
 	if refreshToken == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "refresh token missing"})
+		BadRequest(c, "refresh token missing")
 		return
 	}
 
@@ -223,24 +223,24 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	claims, err := h.authService.ValidateToken(refreshToken)
 	if err != nil {
 		logger.Info("logout token invalid", slog.Any("error", err))
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid refresh token"})
+		Unauthorized(c)
 		return
 	}
 	if claims.TokenType != "refresh" {
 		logger.Info("logout wrong token type", slog.String("token_type", claims.TokenType))
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid refresh token"})
+		Unauthorized(c)
 		return
 	}
 	if claims.ID == "" {
 		logger.Info("logout token missing jti")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid refresh token"})
+		Unauthorized(c)
 		return
 	}
 
 	key := refreshTokenBlacklistKeyPrefix + claims.ID
 	if err := h.revokeRefreshToken(ctx, key, claims.ExpiresAt); err != nil {
 		logger.Error("logout revoke token failed", slog.Any("error", err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		Internal(c, "internal error")
 		return
 	}
 

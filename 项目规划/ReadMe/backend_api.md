@@ -6,6 +6,7 @@ API 基础前缀：`/v1`
 - 刷新令牌通过 `HttpOnly` Cookie（名为 `refresh_token`）或请求体字段传递
 - 生成 PDF/预览的内部打印接口需 `internal_token` 与环境变量 `INTERNAL_API_SECRET` 一致
 - 所有时间字段为 ISO8601 字符串；ID 为整数（除非另有说明）
+- 错误响应约定：所有失败响应体统一为 `{ "error": string }`，未授权文案统一为 `unauthorized`
 
 ---
 
@@ -80,12 +81,14 @@ API 基础前缀：`/v1`
   - 响应：
     - 成功 200：与登录响应相同，并旋转刷新令牌（重置 Cookie）
     - 401 刷新令牌缺失/无效/已吊销；500 服务器错误
+    - 失败体示例：`{ "error": "unauthorized" }`
 
 - `POST /v1/auth/logout`（需要鉴权）
   - 刷新令牌来源同上（Cookie 或 Body）
   - 响应：
     - 成功 200，清除 `refresh_token` Cookie
     - 400 刷新令牌缺失；401/500 视校验与存储结果
+    - 失败体约定：`{ "error": string }`，未授权为 `unauthorized`
 
 ---
 
@@ -149,6 +152,7 @@ API 基础前缀：`/v1`
       }
       ```
     - 403 达到简历数量上限；400/500 视校验与存储结果
+    - 失败体示例：`{ "error": "resume limit reached" }`
 
 - `GET /v1/resume`
   - 响应 200：
@@ -180,6 +184,7 @@ API 基础前缀：`/v1`
   - 响应：
     - 成功 200：`{ "url": "https://presigned-url" }`
     - 409 PDF 尚未生成；400/404/500 视查询结果
+    - 失败体示例：`{ "error": "pdf not ready" }`
 
 ---
 
@@ -262,6 +267,7 @@ API 基础前缀：`/v1`
     { "id": 456, "title": "我的模板", "content": { /* JSON */ }, "preview_image_url": "https://..." }
     ```
   - 错误：403 非 owner 且非公开；404 未找到；500 服务器错误
+  - 失败体示例：`{ "error": "access denied" }`
 
 - `POST /v1/templates/:id/generate-preview`
   - 响应：
@@ -294,6 +300,7 @@ API 基础前缀：`/v1`
     }
     ```
   - 401 内部令牌缺失/不匹配；400 ID 非法；404 未找到；500 服务器错误
+  - 失败体示例：`{ "error": "unauthorized" }`
 
 ---
 

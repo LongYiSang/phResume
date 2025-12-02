@@ -69,13 +69,13 @@ type templateDetailResponse struct {
 func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 	userID, ok := userIDFromContext(c)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		AbortUnauthorized(c)
 		return
 	}
 
 	var req createTemplateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		BadRequest(c, err.Error())
 		return
 	}
 
@@ -91,16 +91,16 @@ func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 		Model(&database.Template{}).
 		Where("user_id = ? AND is_public = ?", userID, false).
 		Count(&count).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count templates"})
+		Internal(c, "failed to count templates")
 		return
 	}
 	if h.maxTemplates > 0 && count >= int64(h.maxTemplates) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "template limit reached"})
+		Forbidden(c, "template limit reached")
 		return
 	}
 
 	if err := h.db.WithContext(c.Request.Context()).Create(&model).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create template"})
+		Internal(c, "failed to create template")
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{
@@ -114,13 +114,13 @@ func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 func (h *TemplateHandler) DeleteTemplate(c *gin.Context) {
 	userID, ok := userIDFromContext(c)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		AbortUnauthorized(c)
 		return
 	}
 
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || id == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid template id"})
+		BadRequest(c, "invalid template id")
 		return
 	}
 
@@ -129,21 +129,21 @@ func (h *TemplateHandler) DeleteTemplate(c *gin.Context) {
 		First(&model, uint(id)).Error; err != nil {
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
+			NotFound(c, "template not found")
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query template"})
+			Internal(c, "failed to query template")
 		}
 		return
 	}
 
 	if model.UserID != userID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+		Forbidden(c, "access denied")
 		return
 	}
 
 	if err := h.db.WithContext(c.Request.Context()).
 		Delete(&database.Template{}, model.ID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete template"})
+		Internal(c, "failed to delete template")
 		return
 	}
 
@@ -155,7 +155,7 @@ func (h *TemplateHandler) DeleteTemplate(c *gin.Context) {
 func (h *TemplateHandler) ListTemplates(c *gin.Context) {
 	userID, ok := userIDFromContext(c)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		AbortUnauthorized(c)
 		return
 	}
 
@@ -164,7 +164,7 @@ func (h *TemplateHandler) ListTemplates(c *gin.Context) {
 		Where("user_id = ? OR is_public = ?", userID, true).
 		Order("updated_at DESC").
 		Find(&templates).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list templates"})
+		Internal(c, "failed to list templates")
 		return
 	}
 
@@ -185,13 +185,13 @@ func (h *TemplateHandler) ListTemplates(c *gin.Context) {
 func (h *TemplateHandler) GetTemplate(c *gin.Context) {
 	userID, ok := userIDFromContext(c)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		AbortUnauthorized(c)
 		return
 	}
 
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || id == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid template id"})
+		BadRequest(c, "invalid template id")
 		return
 	}
 
@@ -200,15 +200,15 @@ func (h *TemplateHandler) GetTemplate(c *gin.Context) {
 		First(&model, uint(id)).Error; err != nil {
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
+			NotFound(c, "template not found")
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query template"})
+			Internal(c, "failed to query template")
 		}
 		return
 	}
 
 	if model.UserID != userID && !model.IsPublic {
-		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+		Forbidden(c, "access denied")
 		return
 	}
 
@@ -224,13 +224,13 @@ func (h *TemplateHandler) GetTemplate(c *gin.Context) {
 func (h *TemplateHandler) GeneratePreview(c *gin.Context) {
 	userID, ok := userIDFromContext(c)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		AbortUnauthorized(c)
 		return
 	}
 
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || id == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid template id"})
+		BadRequest(c, "invalid template id")
 		return
 	}
 
@@ -239,28 +239,28 @@ func (h *TemplateHandler) GeneratePreview(c *gin.Context) {
 		First(&model, uint(id)).Error; err != nil {
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
+			NotFound(c, "template not found")
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query template"})
+			Internal(c, "failed to query template")
 		}
 		return
 	}
 
 	if model.UserID != userID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+		Forbidden(c, "access denied")
 		return
 	}
 
 	correlationID := middleware.GetCorrelationID(c)
 	task, err := tasks.NewTemplatePreviewTask(model.ID, correlationID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create preview task"})
+		Internal(c, "failed to create preview task")
 		return
 	}
 
 	info, err := h.asynqClient.Enqueue(task, asynq.MaxRetry(5))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to enqueue preview task"})
+		Internal(c, "failed to enqueue preview task")
 		return
 	}
 
@@ -273,19 +273,19 @@ func (h *TemplateHandler) GeneratePreview(c *gin.Context) {
 // GET /v1/templates/print/:id
 func (h *TemplateHandler) GetPrintTemplateData(c *gin.Context) {
 	if h.internalSecret == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal api secret is not configured"})
+		Internal(c, "internal api secret is not configured")
 		return
 	}
 
 	token := strings.TrimSpace(c.Query("internal_token"))
 	if token == "" || token != h.internalSecret {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		Unauthorized(c)
 		return
 	}
 
 	templateID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid template id"})
+		BadRequest(c, "invalid template id")
 		return
 	}
 
@@ -294,25 +294,25 @@ func (h *TemplateHandler) GetPrintTemplateData(c *gin.Context) {
 	if err := h.db.WithContext(ctx).First(&templateModel, uint(templateID)).Error; err != nil {
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
+			NotFound(c, "template not found")
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load template"})
+			Internal(c, "failed to load template")
 		}
 		return
 	}
 
 	var content resume.Content
 	if err := json.Unmarshal(templateModel.Content, &content); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode template"})
+		Internal(c, "failed to decode template")
 		return
 	}
 
 	if err := inlineContentImages(ctx, h.storage, templateModel.UserID, &content); err != nil {
 		if status, ok := statusFromInlineError(err); ok {
-			c.JSON(status, gin.H{"error": err.Error()})
+			Error(c, status, err.Error())
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		Internal(c, err.Error())
 		return
 	}
 

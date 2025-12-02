@@ -69,13 +69,13 @@ type resumeResponse struct {
 func (h *ResumeHandler) CreateResume(c *gin.Context) {
 	var req createResumeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		BadRequest(c, err.Error())
 		return
 	}
 
 	userID, ok := userIDFromContext(c)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		AbortUnauthorized(c)
 		return
 	}
 
@@ -86,12 +86,12 @@ func (h *ResumeHandler) CreateResume(c *gin.Context) {
 		Model(&database.Resume{}).
 		Where("user_id = ?", userID).
 		Count(&count).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count resumes"})
+		Internal(c, "failed to count resumes")
 		return
 	}
 
 	if h.maxResumes > 0 && count >= int64(h.maxResumes) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "resume limit reached"})
+		Forbidden(c, "resume limit reached")
 		return
 	}
 
@@ -105,12 +105,12 @@ func (h *ResumeHandler) CreateResume(c *gin.Context) {
 	}
 
 	if err := h.db.WithContext(ctx).Create(&resume).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create resume"})
+		Internal(c, "failed to create resume")
 		return
 	}
 
 	if err := h.setActiveResumeID(ctx, userID, &resume.ID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to mark active resume"})
+		Internal(c, "failed to mark active resume")
 		return
 	}
 
@@ -121,7 +121,7 @@ func (h *ResumeHandler) CreateResume(c *gin.Context) {
 func (h *ResumeHandler) GetLatestResume(c *gin.Context) {
 	userID, ok := userIDFromContext(c)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		AbortUnauthorized(c)
 		return
 	}
 
@@ -138,7 +138,7 @@ func (h *ResumeHandler) GetLatestResume(c *gin.Context) {
 			})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query latest resume"})
+		Internal(c, "failed to query latest resume")
 		return
 	}
 
@@ -149,7 +149,7 @@ func (h *ResumeHandler) GetLatestResume(c *gin.Context) {
 func (h *ResumeHandler) ListResumes(c *gin.Context) {
 	userID, ok := userIDFromContext(c)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		AbortUnauthorized(c)
 		return
 	}
 
@@ -159,7 +159,7 @@ func (h *ResumeHandler) ListResumes(c *gin.Context) {
 		Where("user_id = ?", userID).
 		Order("created_at DESC").
 		Find(&resumes).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list resumes"})
+		Internal(c, "failed to list resumes")
 		return
 	}
 
@@ -180,7 +180,7 @@ func (h *ResumeHandler) ListResumes(c *gin.Context) {
 func (h *ResumeHandler) GetResume(c *gin.Context) {
 	userID, ok := userIDFromContext(c)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		AbortUnauthorized(c)
 		return
 	}
 
@@ -188,17 +188,17 @@ func (h *ResumeHandler) GetResume(c *gin.Context) {
 	if err != nil {
 		switch {
 		case errors.Is(err, errInvalidResumeID):
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resume id"})
+			BadRequest(c, "invalid resume id")
 		case errors.Is(err, gorm.ErrRecordNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": "resume not found"})
+			NotFound(c, "resume not found")
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query resume"})
+			Internal(c, "failed to query resume")
 		}
 		return
 	}
 
 	if err := h.setActiveResumeID(c.Request.Context(), userID, &resume.ID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to mark active resume"})
+		Internal(c, "failed to mark active resume")
 		return
 	}
 
@@ -209,13 +209,13 @@ func (h *ResumeHandler) GetResume(c *gin.Context) {
 func (h *ResumeHandler) UpdateResume(c *gin.Context) {
 	var req createResumeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		BadRequest(c, err.Error())
 		return
 	}
 
 	userID, ok := userIDFromContext(c)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		AbortUnauthorized(c)
 		return
 	}
 
@@ -223,11 +223,11 @@ func (h *ResumeHandler) UpdateResume(c *gin.Context) {
 	if err != nil {
 		switch {
 		case errors.Is(err, errInvalidResumeID):
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resume id"})
+			BadRequest(c, "invalid resume id")
 		case errors.Is(err, gorm.ErrRecordNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": "resume not found"})
+			NotFound(c, "resume not found")
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query resume"})
+			Internal(c, "failed to query resume")
 		}
 		return
 	}
@@ -242,17 +242,17 @@ func (h *ResumeHandler) UpdateResume(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	if err := h.db.WithContext(ctx).Model(resume).Updates(updates).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update resume"})
+		Internal(c, "failed to update resume")
 		return
 	}
 
 	if err := h.db.WithContext(ctx).First(resume, resume.ID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reload resume"})
+		Internal(c, "failed to reload resume")
 		return
 	}
 
 	if err := h.setActiveResumeID(ctx, userID, &resume.ID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to mark active resume"})
+		Internal(c, "failed to mark active resume")
 		return
 	}
 
@@ -263,7 +263,7 @@ func (h *ResumeHandler) UpdateResume(c *gin.Context) {
 func (h *ResumeHandler) DeleteResume(c *gin.Context) {
 	userID, ok := userIDFromContext(c)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		AbortUnauthorized(c)
 		return
 	}
 
@@ -271,23 +271,23 @@ func (h *ResumeHandler) DeleteResume(c *gin.Context) {
 	if err != nil {
 		switch {
 		case errors.Is(err, errInvalidResumeID):
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resume id"})
+			BadRequest(c, "invalid resume id")
 		case errors.Is(err, gorm.ErrRecordNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": "resume not found"})
+			NotFound(c, "resume not found")
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query resume"})
+			Internal(c, "failed to query resume")
 		}
 		return
 	}
 
 	ctx := c.Request.Context()
 	if err := h.db.WithContext(ctx).Delete(&database.Resume{}, resume.ID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete resume"})
+		Internal(c, "failed to delete resume")
 		return
 	}
 
 	if err := h.assignLatestResumeAsActive(ctx, userID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update active resume"})
+		Internal(c, "failed to update active resume")
 		return
 	}
 
@@ -364,7 +364,7 @@ func (h *ResumeHandler) findActiveOrLatestResume(ctx context.Context, userID uin
 func (h *ResumeHandler) DownloadResume(c *gin.Context) {
 	userID, ok := userIDFromContext(c)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		AbortUnauthorized(c)
 		return
 	}
 
@@ -372,11 +372,11 @@ func (h *ResumeHandler) DownloadResume(c *gin.Context) {
 	if err != nil {
 		switch {
 		case errors.Is(err, errInvalidResumeID):
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resume id"})
+			BadRequest(c, "invalid resume id")
 		case errors.Is(err, gorm.ErrRecordNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": "resume not found"})
+			NotFound(c, "resume not found")
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query resume"})
+			Internal(c, "failed to query resume")
 		}
 		return
 	}
@@ -384,13 +384,13 @@ func (h *ResumeHandler) DownloadResume(c *gin.Context) {
 	correlationID := middleware.GetCorrelationID(c)
 	task, err := tasks.NewPDFGenerateTask(resume.ID, correlationID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create task"})
+		Internal(c, "failed to create task")
 		return
 	}
 
 	info, err := h.asynqClient.Enqueue(task, asynq.MaxRetry(5))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to enqueue pdf generation"})
+		Internal(c, "failed to enqueue pdf generation")
 		return
 	}
 
@@ -430,7 +430,7 @@ func userIDFromContext(c *gin.Context) (uint, bool) {
 func (h *ResumeHandler) GetDownloadLink(c *gin.Context) {
 	userID, ok := userIDFromContext(c)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		AbortUnauthorized(c)
 		return
 	}
 
@@ -438,23 +438,23 @@ func (h *ResumeHandler) GetDownloadLink(c *gin.Context) {
 	if err != nil {
 		switch {
 		case errors.Is(err, errInvalidResumeID):
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resume id"})
+			BadRequest(c, "invalid resume id")
 		case errors.Is(err, gorm.ErrRecordNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": "resume not found"})
+			NotFound(c, "resume not found")
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query resume"})
+			Internal(c, "failed to query resume")
 		}
 		return
 	}
 
 	if resume.PdfUrl == "" {
-		c.JSON(http.StatusConflict, gin.H{"error": "pdf not ready"})
+		Conflict(c, "pdf not ready")
 		return
 	}
 
 	signedURL, err := h.storage.GeneratePresignedURL(c.Request.Context(), resume.PdfUrl, 5*time.Minute)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate download link"})
+		Internal(c, "failed to generate download link")
 		return
 	}
 
@@ -464,19 +464,19 @@ func (h *ResumeHandler) GetDownloadLink(c *gin.Context) {
 // GetPrintResumeData 返回渲染 PDF 所需的 JSON 数据，附带预签名图像链接。
 func (h *ResumeHandler) GetPrintResumeData(c *gin.Context) {
 	if h.internalSecret == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal api secret is not configured"})
+		Internal(c, "internal api secret is not configured")
 		return
 	}
 
 	token := strings.TrimSpace(c.Query("internal_token"))
 	if token == "" || token != h.internalSecret {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		Unauthorized(c)
 		return
 	}
 
 	resumeID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resume id"})
+		BadRequest(c, "invalid resume id")
 		return
 	}
 
@@ -485,25 +485,25 @@ func (h *ResumeHandler) GetPrintResumeData(c *gin.Context) {
 	if err := h.db.WithContext(ctx).First(&resumeModel, uint(resumeID)).Error; err != nil {
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": "resume not found"})
+			NotFound(c, "resume not found")
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load resume"})
+			Internal(c, "failed to load resume")
 		}
 		return
 	}
 
 	var content resume.Content
 	if err := json.Unmarshal(resumeModel.Content, &content); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode resume"})
+		Internal(c, "failed to decode resume")
 		return
 	}
 
 	if err := inlineContentImages(ctx, h.storage, resumeModel.UserID, &content); err != nil {
 		if status, ok := statusFromInlineError(err); ok {
-			c.JSON(status, gin.H{"error": err.Error()})
+			Error(c, status, err.Error())
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		Internal(c, err.Error())
 		return
 	}
 

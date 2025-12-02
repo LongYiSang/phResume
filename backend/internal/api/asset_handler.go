@@ -36,13 +36,13 @@ func NewAssetHandler(storageClient *storage.Client, logger *slog.Logger, clamdAd
 func (h *AssetHandler) UploadAsset(c *gin.Context) {
 	userID, ok := userIDFromContext(c)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		AbortUnauthorized(c)
 		return
 	}
 
 	file, err := c.FormFile("file")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing file"})
+		BadRequest(c, "missing file")
 		return
 	}
 
@@ -59,21 +59,21 @@ func (h *AssetHandler) UploadAsset(c *gin.Context) {
 	fileReader.Close()
 	if err != nil {
 		h.Logger.Error("scan file", slog.String("error", err.Error()))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan file"})
+		Internal(c, "failed to scan file")
 		return
 	}
 	defer close(abortChan)
 
 	for result := range scanChan {
 		if result.Status != clamd.RES_OK {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "malicious file detected"})
+			BadRequest(c, "malicious file detected")
 			return
 		}
 	}
 
 	fileReader, err = file.Open()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reopen file"})
+		Internal(c, "failed to reopen file")
 		return
 	}
 	defer fileReader.Close()
@@ -86,7 +86,7 @@ func (h *AssetHandler) UploadAsset(c *gin.Context) {
 
 	if _, err := h.Storage.UploadFile(c.Request.Context(), objectKey, fileReader, file.Size, contentType); err != nil {
 		h.Logger.Error("upload file", slog.String("error", err.Error()))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload file"})
+		Internal(c, "failed to upload file")
 		return
 	}
 
@@ -97,7 +97,7 @@ func (h *AssetHandler) UploadAsset(c *gin.Context) {
 func (h *AssetHandler) ListAssets(c *gin.Context) {
 	userID, ok := userIDFromContext(c)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		AbortUnauthorized(c)
 		return
 	}
 
@@ -114,7 +114,7 @@ func (h *AssetHandler) ListAssets(c *gin.Context) {
 	objects, err := h.Storage.ListObjects(c.Request.Context(), prefix, limit)
 	if err != nil {
 		h.Logger.Error("list assets", slog.String("error", err.Error()))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list assets"})
+		Internal(c, "failed to list assets")
 		return
 	}
 
@@ -144,26 +144,26 @@ func (h *AssetHandler) ListAssets(c *gin.Context) {
 func (h *AssetHandler) GetAssetURL(c *gin.Context) {
 	userID, ok := userIDFromContext(c)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		AbortUnauthorized(c)
 		return
 	}
 
 	objectKey := c.Query("key")
 	if objectKey == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing key"})
+		BadRequest(c, "missing key")
 		return
 	}
 
 	expectedPrefix := fmt.Sprintf("user-assets/%d/", userID)
 	if !strings.HasPrefix(objectKey, expectedPrefix) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+		Forbidden(c, "access denied")
 		return
 	}
 
 	signedURL, err := h.Storage.GeneratePresignedURL(c.Request.Context(), objectKey, 15*time.Minute)
 	if err != nil {
 		h.Logger.Error("generate presigned url", slog.String("error", err.Error()))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate url"})
+		Internal(c, "failed to generate url")
 		return
 	}
 
