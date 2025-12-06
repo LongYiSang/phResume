@@ -184,7 +184,10 @@ function TextItemEditable({ html, style, onChange }: { html: string; style?: CSS
   );
   return (
     <LexicalComposer initialConfig={initialConfig}>
-      <div className={`h-full w-full p-0 transition-all ${isFocused ? "ring-1 ring-blue-500" : "ring-1 ring-transparent"}`}>
+      <div
+        className={`h-full w-full p-0 transition-all ${isFocused ? "ring-1 ring-blue-500" : "ring-1 ring-transparent"}`}
+        style={{ display: "flex", alignItems: "flex-start", justifyContent: "flex-start" }}
+      >
         <RichTextPlugin
           contentEditable={
             <ContentEditable

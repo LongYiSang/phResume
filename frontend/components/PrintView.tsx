@@ -28,6 +28,8 @@ const DEFAULT_LAYOUT_SETTINGS = {
 };
 import { API_ROUTES } from "@/lib/api-routes";
 
+import { Watermark } from "@/components/Watermark";
+
 type ItemLayout = ResumeItem["layout"];
 
 function resolveLayout(layout?: ItemLayout) {
@@ -145,26 +147,46 @@ export function PrintView({ resourcePath }: PrintViewProps) {
           {resumeData?.items?.map((item) => {
             const resolvedLayout = resolveLayout(item.layout);
             const backgroundMeta = extractBackgroundStyle(item.style);
-            const containerBackground =
-              applyOpacityToColor(backgroundMeta.color, backgroundMeta.opacity) ??
-              "rgba(255,255,255,0.96)";
-            const hasCustomBackground = Boolean(
-              backgroundMeta.color && backgroundMeta.color.trim().length > 0 &&
-              ((typeof backgroundMeta.opacity === "number" ? backgroundMeta.opacity : 1) > 0)
+            const containerBackground = applyOpacityToColor(
+              backgroundMeta.color,
+              backgroundMeta.opacity,
             );
-            const isSectionTitle = item.type === "section_title";
+            const hasBackground = Boolean(
+              containerBackground && containerBackground.trim().length > 0,
+            );
+
+            const rawBorder = (item.style as Record<string, unknown> | undefined)?.["border"];
+            const rawBorderWidth = (item.style as Record<string, unknown> | undefined)?.["borderWidth"];
+            const rawBorderColor = (item.style as Record<string, unknown> | undefined)?.["borderColor"];
+            const borderWidth =
+              typeof rawBorderWidth === "number"
+                ? rawBorderWidth
+                : typeof rawBorderWidth === "string"
+                  ? Number.parseFloat(rawBorderWidth)
+                  : undefined;
+            const hasExplicitBorder =
+              (typeof rawBorder === "string" && rawBorder.trim().length > 0) ||
+              (typeof borderWidth === "number" && !Number.isNaN(borderWidth) && borderWidth > 0);
+            const borderColor =
+              typeof rawBorderColor === "string" && rawBorderColor.trim().length > 0
+                ? rawBorderColor
+                : undefined;
+            const borderValue =
+              typeof rawBorder === "string" && rawBorder.trim().length > 0
+                ? (rawBorder as string)
+                : hasExplicitBorder
+                  ? `${Math.max(1, Math.round(borderWidth!))}px solid ${borderColor ?? "currentColor"}`
+                  : "none";
+
             const commonCellStyle: CSSProperties = {
               gridColumn: `${resolvedLayout.x + 1} / span ${resolvedLayout.w}`,
               gridRow: `${resolvedLayout.y + 1} / span ${resolvedLayout.h}`,
               padding: "12px",
               borderRadius: "20px",
-              backgroundColor: isSectionTitle ? "transparent" : containerBackground,
+              backgroundColor: hasBackground ? containerBackground : "transparent",
               minWidth: 0,
               boxSizing: "border-box",
-              border:
-                (item.type === "text" || isSectionTitle) && !hasCustomBackground
-                  ? "none"
-                  : "1px solid rgba(226, 232, 240, 0.7)",
+              border: borderValue,
             };
 
             const baseTextStyle: CSSProperties = {
@@ -232,6 +254,7 @@ export function PrintView({ resourcePath }: PrintViewProps) {
           })}
         </div>
         {isRendered && <div id="pdf-render-ready" />}
+        {layoutSettings.enable_watermark && <Watermark />}
       </PageContainer>
 
       <div className="mt-6 text-center text-sm text-zinc-500">

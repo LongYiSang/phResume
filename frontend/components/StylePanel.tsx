@@ -13,6 +13,8 @@ type StylePanelProps = {
   selectedItemType: string | null;
   selectedItemFontSize: number | null;
   onSelectedItemFontSizeChange: (value: number) => void;
+  selectedItemLineHeight?: number | null;
+  onSelectedItemLineHeightChange?: (value: number) => void;
   selectedItemColor: string | null;
   onSelectedItemColorChange: (value: string) => void;
   selectedItemContent?: string | null;
@@ -93,6 +95,8 @@ export function StylePanel({
   selectedItemType,
   selectedItemFontSize,
   onSelectedItemFontSizeChange,
+  selectedItemLineHeight,
+  onSelectedItemLineHeightChange,
   selectedItemColor,
   onSelectedItemColorChange,
   selectedItemContent,
@@ -186,6 +190,7 @@ export function StylePanel({
   const dividerThicknessValue = selectedDividerThickness ?? 2;
   const imageScalePercent = selectedImageScalePercent ?? 100;
   const imageFocus = selectedImageFocus ?? { x: 50, y: 50 };
+  const lineHeightPercent = Math.round(((selectedItemLineHeight ?? 1.2)) * 100);
   const handleRGBChange = (event: ChangeEvent<HTMLInputElement>, channel: "r" | "g" | "b") => {
     const curr = currentColor;
     const m = curr.match(/rgb\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)\)/i);
@@ -377,6 +382,19 @@ export function StylePanel({
                 {selectedItemFontSize === null
                   ? "点击右侧模块后可调整该模块字号"
                   : `当前：${selectedItemFontSize} pt`}
+              </div>
+              <Slider
+                label="行高（%）"
+                minValue={100}
+                maxValue={200}
+                step={1}
+                value={lineHeightPercent}
+                onChange={(val) =>
+                  typeof val === "number" && onSelectedItemLineHeightChange?.(Math.round(val) / 100)
+                }
+              />
+              <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                {`${lineHeightPercent}%`}
               </div>
             </div>
           ) : null}

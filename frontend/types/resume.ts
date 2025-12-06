@@ -5,6 +5,7 @@ export type LayoutSettings = {
   columns: number;
   row_height_px: number;
   margin_px: number;
+  enable_watermark?: boolean;
   [key: string]: unknown;
 };
 

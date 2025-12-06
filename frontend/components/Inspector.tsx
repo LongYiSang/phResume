@@ -27,6 +27,8 @@ type InspectorProps = {
   selectedItemType: string | null;
   selectedItemFontSize: number | null;
   onSelectedItemFontSizeChange: (v: number) => void;
+  selectedItemLineHeight?: number | null;
+  onSelectedItemLineHeightChange?: (v: number) => void;
   selectedItemColor: string | null;
   onSelectedItemColorChange: (v: string) => void;
   selectedItemFontFamily?: string | null;
@@ -66,7 +68,7 @@ function HeaderButton({ children, onClick, disabled }: { children: React.ReactNo
   );
 }
 
-export default function Inspector({ title, onUpdateTitle, onSave, onDownload, historyCanUndo, historyCanRedo, onUndo, onRedo, styleSettings, onStyleSettingsChange, selectedItemType, selectedItemFontSize, onSelectedItemFontSizeChange, selectedItemColor, onSelectedItemColorChange, selectedItemFontFamily, selectedItemContent, selectedItemBackgroundColor, selectedItemBackgroundOpacity, selectedDividerThickness, selectedImageScalePercent, selectedImageFocus, selectedBorderRadius, onBorderRadiusChange, onSelectedItemFontFamilyChange, onBackgroundColorChange, onBackgroundOpacityChange, onDividerThicknessChange, onDeleteSelected, onFormatText, onAlignElement, onListToggle, onImageZoomChange, onImageFocusChange, onImageZoomReset, zoom, setZoom }: InspectorProps) {
+export default function Inspector({ title, onUpdateTitle, onSave, onDownload, historyCanUndo, historyCanRedo, onUndo, onRedo, styleSettings, onStyleSettingsChange, selectedItemType, selectedItemFontSize, onSelectedItemFontSizeChange, selectedItemLineHeight, onSelectedItemLineHeightChange, selectedItemColor, onSelectedItemColorChange, selectedItemFontFamily, selectedItemContent, selectedItemBackgroundColor, selectedItemBackgroundOpacity, selectedDividerThickness, selectedImageScalePercent, selectedImageFocus, selectedBorderRadius, onBorderRadiusChange, onSelectedItemFontFamilyChange, onBackgroundColorChange, onBackgroundOpacityChange, onDividerThicknessChange, onDeleteSelected, onFormatText, onAlignElement, onListToggle, onImageZoomChange, onImageFocusChange, onImageZoomReset, zoom, setZoom }: InspectorProps) {
   const { activeEditor } = useActiveEditor();
 
 
@@ -109,6 +111,8 @@ export default function Inspector({ title, onUpdateTitle, onSave, onDownload, hi
           selectedItemType={selectedItemType}
           selectedItemFontSize={selectedItemFontSize}
           onSelectedItemFontSizeChange={onSelectedItemFontSizeChange}
+          selectedItemLineHeight={selectedItemLineHeight}
+          onSelectedItemLineHeightChange={onSelectedItemLineHeightChange}
           selectedItemColor={selectedItemColor}
           onSelectedItemColorChange={onSelectedItemColorChange}
           selectedItemFontFamily={selectedItemFontFamily}

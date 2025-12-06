@@ -42,6 +42,8 @@ import type {
   ResumeItemStyle,
 } from "@/types/resume";
 
+import { Watermark } from "@/components/Watermark";
+
 type TaskStatus = "idle" | "pending" | "completed";
 
 const CANVAS_WIDTH = 794; // 必须与 pdf_template.go (794px) 匹配
@@ -224,6 +226,33 @@ export default function Home() {
       setSelectedItemId(null);
     },
     [],
+  );
+
+  const saveResume = useCallback(
+    async (items: ResumeItem[], newSettings: LayoutSettings) => {
+      if (!isAuthenticated) {
+        return;
+      }
+      if (!savedResumeId) {
+        return;
+      }
+      try {
+        await authFetch(API_ROUTES.RESUME.update(savedResumeId), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title,
+            content: {
+              layout_settings: newSettings,
+              items,
+            },
+          }),
+        });
+      } catch (err) {
+        console.error("自动保存失败", err);
+      }
+    },
+    [isAuthenticated, savedResumeId, title, authFetch],
   );
 
   useEffect(() => {
@@ -673,6 +702,23 @@ export default function Home() {
       return rawColor;
     }
     return resumeData.layout_settings.accent_color;
+  }, [selectedItem, resumeData?.layout_settings]);
+
+  const selectedItemLineHeight = useMemo(() => {
+    if (!selectedItem || !resumeData?.layout_settings) {
+      return null;
+    }
+    const raw = selectedItem.style?.lineHeight;
+    if (typeof raw === "number" && !Number.isNaN(raw)) {
+      return raw;
+    }
+    if (typeof raw === "string") {
+      const parsed = parseFloat(raw);
+      if (!Number.isNaN(parsed)) {
+        return parsed;
+      }
+    }
+    return 1.2;
   }, [selectedItem, resumeData?.layout_settings]);
 
   const selectedItemFontFamily = useMemo(() => {
@@ -1416,12 +1462,26 @@ export default function Home() {
             assetsActive={isAssetsOpen}
             settingsActive={isSettingsOpen}
             disabled={!resumeData}
+            onToggleWatermark={() => {
+              if (!resumeData) return;
+              const newSettings = {
+                ...resumeData.layout_settings,
+                enable_watermark: !resumeData.layout_settings.enable_watermark,
+              };
+              setResumeData({
+                ...resumeData,
+                layout_settings: newSettings,
+              });
+              // 自动保存
+              saveResume(resumeData.items, newSettings);
+            }}
+            watermarkEnabled={resumeData?.layout_settings.enable_watermark}
           />
         </div>
 
         <div className="fixed right-6 top-1/2 -translate-y-1/2 z-40 w-80 " >
           {resumeData && (
-            <Inspector
+          <Inspector
               title={title}
               onUpdateTitle={setTitle}
               onSave={handleSave}
@@ -1439,12 +1499,34 @@ export default function Home() {
                   : null
               }
               onSelectedItemFontSizeChange={handleItemFontSizeChange}
-              selectedItemColor={
-                selectedItem?.type === "text" || selectedItem?.type === "divider"
-                  ? selectedItemColor
-                  : null
-              }
-              onSelectedItemColorChange={handleItemColorChange}
+            selectedItemColor={
+              selectedItem?.type === "text" || selectedItem?.type === "divider"
+                ? selectedItemColor
+                : null
+            }
+            onSelectedItemColorChange={handleItemColorChange}
+            selectedItemLineHeight={
+              selectedItem?.type === "text" || selectedItem?.type === "section_title"
+                ? selectedItemLineHeight
+                : null
+            }
+            onSelectedItemLineHeightChange={(lh) => {
+              if (!selectedItemId || typeof lh !== "number") return;
+              withHistory((prev) => {
+                const updatedItems = prev.items.map((item) =>
+                  item.id !== selectedItemId
+                    ? item
+                    : {
+                        ...item,
+                        style: {
+                          ...(item.style ?? {}),
+                          lineHeight: lh,
+                        },
+                      },
+                );
+                return { ...prev, items: updatedItems };
+              });
+            }}
               selectedItemFontFamily={
                 selectedItem?.type === "text" || selectedItem?.type === "section_title"
                   ? selectedItemFontFamily
@@ -1669,6 +1751,7 @@ export default function Home() {
                     className="print-mask" 
                     style={{ padding: `${layoutMarginPx}px` }}
                   />
+                  {resumeData.layout_settings.enable_watermark && <Watermark />}
                 </PageContainer>
               </div>
             ) : (

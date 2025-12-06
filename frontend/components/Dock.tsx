@@ -1,6 +1,6 @@
 "use client";
 
-import { Type, Image as ImageIcon, Minus, LayoutTemplate, FolderOpen, Settings, User, Heading } from "lucide-react";
+import { Type, Image as ImageIcon, Minus, LayoutTemplate, FolderOpen, Settings, User, Heading, Check } from "lucide-react";
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
 
 type DockProps = {
@@ -11,12 +11,14 @@ type DockProps = {
   onOpenTemplates: () => void;
   onOpenMyResumes: () => void;
   onOpenSettings: () => void;
+  onToggleWatermark: () => void;
   onLogout?: () => void;
   disabled?: boolean;
   templatesActive?: boolean;
   savedActive?: boolean;
   assetsActive?: boolean;
   settingsActive?: boolean;
+  watermarkEnabled?: boolean;
 };
 
 export default function Dock({
@@ -27,12 +29,14 @@ export default function Dock({
   onOpenTemplates,
   onOpenMyResumes,
   onOpenSettings,
+  onToggleWatermark,
   onLogout,
   disabled,
   templatesActive,
   savedActive,
   assetsActive,
   settingsActive,
+  watermarkEnabled,
 }: DockProps) {
   return (
     <div className="bg-white/80 backdrop-blur-xl border border-white/50 rounded-[32px] shadow-soft px-3 py-6 flex flex-col gap-6 transition-all duration-300 hover:shadow-card z-50">
@@ -100,7 +104,49 @@ export default function Dock({
           isActive={Boolean(templatesActive)}
         />
         <DockGhostButton icon={<FolderOpen size={20} />} label="Saved" onClick={onOpenMyResumes} isActive={Boolean(savedActive)} />
-        <DockGhostButton icon={<Settings size={20} />} label="Settings" onClick={onOpenSettings} isActive={Boolean(settingsActive)} />
+        
+        <Dropdown placement="right-start" offset={10}>
+          <DropdownTrigger>
+            <button
+              type="button"
+              aria-pressed={settingsActive}
+              className={`group relative flex flex-col items-center justify-center w-14 h-14 mx-auto transition-all duration-200 active:scale-95 outline-none ${
+                settingsActive ? "text-kawaii-purple" : ""
+              }`}
+            >
+              <div
+                className={`relative z-10 flex items-center justify-center w-10 h-10 rounded-xl bg-white shadow-sm transition-all duration-300 ease-out group-hover:-translate-y-1 group-hover:shadow-md group-hover:scale-105 text-kawaii-purple ${
+                  settingsActive ? "ring-2 ring-kawaii-purple/40" : ""
+                }`}
+              >
+                <Settings size={20} />
+              </div>
+              <span
+                className={`pointer-events-none text-[9px] font-bold text-kawaii-text/70 mt-1 opacity-0 translate-y-1 scale-95 transition-all duration-300 ease-out group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100`}
+              >
+                Settings
+              </span>
+            </button>
+          </DropdownTrigger>
+          <DropdownMenu aria-label="Settings Actions" className="p-2 bg-white/90 backdrop-blur-xl border border-white/60 rounded-xl shadow-card w-[180px]">
+            <DropdownItem
+              key="page_settings"
+              startContent={<Settings size={18} />}
+              onPress={onOpenSettings}
+              className="rounded-lg data-[hover=true]:bg-zinc-100"
+            >
+              页面设置
+            </DropdownItem>
+            <DropdownItem
+              key="watermark"
+              onPress={onToggleWatermark}
+              endContent={watermarkEnabled ? <Check size={16} className="text-kawaii-purple" /> : null}
+              className="rounded-lg data-[hover=true]:bg-zinc-100"
+            >
+              显示水印
+            </DropdownItem>
+          </DropdownMenu>
+        </Dropdown>
       </div>
 
       <div className="w-full h-px bg-kawaii-pinkLight" />

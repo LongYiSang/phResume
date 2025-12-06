@@ -8,12 +8,13 @@ type Content struct {
 
 // LayoutSettings 描述页面的全局样式。
 type LayoutSettings struct {
-	Columns     int    `json:"columns"`
-	RowHeightPx int    `json:"row_height_px"`
-	AccentColor string `json:"accent_color"`
-	FontFamily  string `json:"font_family"`
-	FontSizePt  int    `json:"font_size_pt"`
-	MarginPx    int    `json:"margin_px"`
+	Columns         int    `json:"columns"`
+	RowHeightPx     int    `json:"row_height_px"`
+	AccentColor     string `json:"accent_color"`
+	FontFamily      string `json:"font_family"`
+	FontSizePt      int    `json:"font_size_pt"`
+	MarginPx        int    `json:"margin_px"`
+	EnableWatermark bool   `json:"enable_watermark"`
 }
 
 // Item 表示页面中的单个元素。

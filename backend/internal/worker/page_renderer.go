@@ -144,6 +144,14 @@ func renderFrontendPage(logger *slog.Logger, targetURL string) (_ *rod.Page, cle
     background: white !important;
   }
   @media print {
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    svg, svg * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
     @page {
       size: A4;
       margin: 0;
