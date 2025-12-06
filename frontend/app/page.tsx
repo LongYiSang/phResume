@@ -1655,38 +1655,37 @@ export default function Home() {
                             ? "rgba(255,255,255,0.7)"
                             : "rgba(226, 232, 240, 0.9)";
                       const isSectionTitle = item.type === "section_title";
+                      const isInteractive = isSelected || isOverlapped;
+                      
                       const cellStyle: CSSProperties = {
                         padding: item.type === "image" ? "8px" : "12px",
+                        // 仅当有自定义背景时才应用背景色，否则由 CSS 类控制（默认透明，hover/active 变白）
                         backgroundColor: isSectionTitle
                           ? "transparent"
-                          : resolvedBackgroundColor ?? "rgba(255,255,255,0.92)",
-                        // 共享到内层：让文本编辑器与内容区域继承同样背景
-                        // 使用索引签名为 CSS 自定义变量赋值
+                          : hasCustomBackground 
+                            ? (resolvedBackgroundColor ?? undefined)
+                            : undefined,
                         ["--cell-bg" as unknown as string]: isSectionTitle
                           ? "transparent"
                           : resolvedBackgroundColor ?? "rgba(255,255,255,0.92)",
                         borderColor,
                         borderStyle: hasCustomBackground ? "solid" : "dashed",
-                        borderWidth: isSelected || isOverlapped ? 2 : 1,
+                        borderWidth: isInteractive ? 2 : 1,
                         borderRadius: "22px",
-                        boxShadow: hasCustomBackground
-                          ? "0 30px 60px -35px rgba(147, 51, 234, 0.55)"
-                          : "0 20px 50px -40px rgba(15, 23, 42, 0.45)",
                         transition:
                           "border 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease",
-                        backdropFilter: "blur(14px)",
                       };
 
                       return (
                         <div
                           key={item.id}
-                          className={`group relative h-full w-full rounded-[22px] border text-sm text-zinc-900 shadow-sm transition-all ${
+                          className={`group relative h-full w-full rounded-[22px] border text-sm text-zinc-900 shadow-sm transition-all hover-glass ${
                             item.type === "image" ? "overflow-hidden" : ""
                           } ${
                             isOverlapped
-                              ? "ring-2 ring-red-400"
+                              ? "ring-2 ring-red-400 active-glass"
                               : isSelected
-                                ? "ring-2 ring-kawaii-purple/40"
+                                ? "ring-2 ring-kawaii-purple/40 active-glass"
                                 : ""
                           }`}
                           onMouseDownCapture={() => handleSelectItem(item.id)}

@@ -275,3 +275,17 @@ body {
   border-bottom-left-radius: 32px;
   border-bottom-right-radius: 32px;
 }
+
+/* 编辑器格子交互效果（仅 hover/聚焦/选中/重叠时启用）*/
+.hover-glass {
+  transition: all 0.2s ease;
+  /* 默认透明背景，由内联样式或 Tailwind 类控制 */
+}
+
+.hover-glass:hover,
+.hover-glass:focus,
+.active-glass {
+  background-color: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 26px 46px -32px rgba(15, 23, 42, 0.45), 0 12px 24px -12px rgba(147, 51, 234, 0.25);
+  backdrop-filter: blur(14px);
+}
