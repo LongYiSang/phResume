@@ -3,6 +3,17 @@ x-service-defaults: &service-defaults
   networks:
     - app-network
 
+# 【新增】定义核心服务的资源限制 (2核 4G)
+x-main-resources: &main-resources
+  deploy:
+    resources:
+      limits:
+        cpus: '2.00'
+        memory: 4G
+      reservations:
+        cpus: '0.1'
+        memory: 128M
+
 x-db-env: &db-env
   POSTGRES_USER: phresume
   POSTGRES_PASSWORD: phresume
@@ -16,7 +27,8 @@ x-jwt-env: &jwt-env
 
 services:
   db:
-    <<: *service-defaults
+    # 同时继承默认配置和资源限制
+    <<: [*service-defaults, *main-resources]
     image: postgres:15-alpine
     environment:
       <<: *db-env
@@ -35,7 +47,7 @@ services:
       retries: 5
 
   redis:
-    <<: *service-defaults
+    <<: [*service-defaults, *main-resources]
     image: redis:8.2-alpine
     expose:
       - '6379'
@@ -46,7 +58,7 @@ services:
       retries: 5
 
   minio:
-    <<: *service-defaults
+    <<: [*service-defaults, *main-resources]
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     environment:
@@ -64,7 +76,7 @@ services:
       retries: 5
 
   api:
-    <<: *service-defaults
+    <<: [*service-defaults, *main-resources]
     build:
       context: ./backend
       dockerfile: Dockerfile.api
@@ -75,6 +87,8 @@ services:
         condition: service_healthy
     environment:
       <<: [*db-env, *jwt-env]
+      # 【新增】限制 Go 调度器只使用 2 个核心，配合 Docker 限制
+      GOMAXPROCS: 2
       DATABASE_HOST: db
       DATABASE_PORT: '5432'
       DATABASE_SSLMODE: disable
@@ -92,16 +106,14 @@ services:
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
       JWT_ACCESS_TOKEN_TTL: ${JWT_ACCESS_TOKEN_TTL}
       JWT_REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL}
-      # 新增: 为未来的文件扫描功能预配置 ClamAV 地址
       CLAMAV_HOST: clamav
       CLAMAV_PORT: 3310
-
     volumes:
       - ./backend:/app
     command: air -c .air.toml
 
   frontend:
-    <<: *service-defaults
+    <<: [*service-defaults, *main-resources]
     build:
       context: ./frontend
     depends_on:
@@ -116,7 +128,7 @@ services:
     command: npm run dev
 
   nginx:
-    <<: *service-defaults
+    <<: [*service-defaults, *main-resources]
     image: nginx:1.27-alpine
     depends_on:
       - frontend
@@ -127,7 +139,7 @@ services:
       - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
 
   worker:
-    <<: *service-defaults
+    <<: [*service-defaults, *main-resources]
     build:
       context: ./backend
       dockerfile: Dockerfile.worker
@@ -138,6 +150,8 @@ services:
         condition: service_healthy
     environment:
       <<: [*db-env, *jwt-env]
+      # 【新增】限制 Go 调度器
+      GOMAXPROCS: 2
       DATABASE_HOST: db
       DATABASE_PORT: '5432'
       DATABASE_SSLMODE: disable
@@ -155,7 +169,7 @@ services:
     command: air -c .air.worker.toml
 
   # -------------------------------------------------------------------
-  #  Phase 4: 可观测性 (日志)
+  #  Phase 4: 可观测性 (日志) - 注意：这里未添加资源限制
   # -------------------------------------------------------------------
 
   loki:
@@ -226,13 +240,13 @@ services:
         condition: service_healthy
 
   # -------------------------------------------------------------------
-  #  Phase 4: 安全 (病毒扫描)
+  #  Phase 4: 安全 (病毒扫描) - 应用限制
   # -------------------------------------------------------------------
 
   clamav:
     image: clamav/clamav:1.3.1
     container_name: clamav
-    <<: *service-defaults
+    <<: [*service-defaults, *main-resources]
     volumes:
       - clamav_data:/var/lib/clamav
     healthcheck:
