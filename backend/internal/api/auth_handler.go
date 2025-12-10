@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	stdhttp "net/http"
 	"strings"
 	"time"
 
@@ -23,19 +24,25 @@ const refreshTokenBlacklistKeyPrefix = "auth:refresh:blacklist:"
 
 // AuthHandler 处理注册、登录、刷新与退出。
 type AuthHandler struct {
-	db          *gorm.DB
-	authService *auth.AuthService
-	redis       redis.UniversalClient
-	logger      *slog.Logger
+	db                    *gorm.DB
+	authService           *auth.AuthService
+	redis                 redis.UniversalClient
+	logger                *slog.Logger
+	loginRateLimitPerHour int
+	loginLockThreshold    int
+	loginLockTTL          time.Duration
 }
 
 // NewAuthHandler 构造认证处理器。
-func NewAuthHandler(db *gorm.DB, authService *auth.AuthService, redisClient redis.UniversalClient, logger *slog.Logger) *AuthHandler {
+func NewAuthHandler(db *gorm.DB, authService *auth.AuthService, redisClient redis.UniversalClient, logger *slog.Logger, loginRateLimitPerHour int, loginLockThreshold int, loginLockTTL time.Duration) *AuthHandler {
 	return &AuthHandler{
-		db:          db,
-		authService: authService,
-		redis:       redisClient,
-		logger:      logger,
+		db:                    db,
+		authService:           authService,
+		redis:                 redisClient,
+		logger:                logger,
+		loginRateLimitPerHour: loginRateLimitPerHour,
+		loginLockThreshold:    loginLockThreshold,
+		loginLockTTL:          loginLockTTL,
 	}
 }
 
@@ -97,6 +104,7 @@ type loginRequest struct {
 
 // Login 校验口令并返回 Token。
 func (h *AuthHandler) Login(c *gin.Context) {
+	ip := c.ClientIP()
 	var req loginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		BadRequest(c, err.Error())
@@ -108,10 +116,29 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		slog.String("username", req.Username),
 	)
 
+	// 速率限制：每 IP+用户名 每小时 10 次
+	rateKey := "rate:login:" + ip + ":" + strings.ToLower(req.Username) + ":" + time.Now().UTC().Format("2006010215")
+	count, _ := h.redis.Incr(ctx, rateKey).Result()
+	if count == 1 {
+		_ = h.redis.Expire(ctx, rateKey, time.Hour).Err()
+	}
+	if count > int64(h.loginRateLimitPerHour) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
+		return
+	}
+
+	// 锁定检查
+	lockKey := "lock:login:" + strings.ToLower(req.Username)
+	if ttl, _ := h.redis.TTL(ctx, lockKey).Result(); ttl > 0 {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "account temporarily locked"})
+		return
+	}
+
 	var user database.User
 	if err := h.db.WithContext(ctx).Where("username = ?", req.Username).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			logger.Info("login failed: user not found")
+			_ = h.incrementLoginFail(ctx, strings.ToLower(req.Username))
 			Unauthorized(c)
 			return
 		}
@@ -122,9 +149,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	if !h.authService.CheckPasswordHash(req.Password, user.PasswordHash) {
 		logger.Info("login failed: password mismatch", slog.Uint64("user_id", uint64(user.ID)))
+		_ = h.incrementLoginFail(ctx, strings.ToLower(req.Username))
 		Unauthorized(c)
 		return
 	}
+
+	// 登录成功：清理失败计数
+	_ = h.redis.Del(ctx, "lock:login:fail:"+strings.ToLower(req.Username)).Err()
 
 	tokenPair, err := h.authService.GenerateTokenPair(user.ID)
 	if err != nil {
@@ -245,7 +276,15 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	}
 
 	// 清除 Cookie。
-	c.SetCookie(refreshTokenCookieName, "", -1, "/", "", h.isHTTPSRequest(c), true)
+	stdhttp.SetCookie(c.Writer, &stdhttp.Cookie{
+		Name:     refreshTokenCookieName,
+		Value:    "",
+		MaxAge:   -1,
+		Path:     "/",
+		Secure:   h.isHTTPSRequest(c),
+		HttpOnly: true,
+		SameSite: stdhttp.SameSiteLaxMode,
+	})
 	c.Status(http.StatusOK)
 }
 
@@ -266,15 +305,16 @@ func (h *AuthHandler) setRefreshCookie(c *gin.Context, refreshToken string) {
 	if maxAge <= 0 {
 		maxAge = int(time.Hour.Seconds())
 	}
-	c.SetCookie(
-		refreshTokenCookieName,
-		refreshToken,
-		maxAge,
-		"/",
-		"",
-		h.isHTTPSRequest(c),
-		true,
-	)
+	cookie := &stdhttp.Cookie{
+		Name:     refreshTokenCookieName,
+		Value:    refreshToken,
+		MaxAge:   maxAge,
+		Path:     "/",
+		Secure:   h.isHTTPSRequest(c),
+		HttpOnly: true,
+		SameSite: stdhttp.SameSiteLaxMode,
+	}
+	stdhttp.SetCookie(c.Writer, cookie)
 }
 
 func (h *AuthHandler) revokeRefreshToken(ctx context.Context, key string, expiresAt *jwt.NumericDate) error {
@@ -308,4 +348,18 @@ func (h *AuthHandler) isHTTPSRequest(c *gin.Context) bool {
 		return true
 	}
 	return strings.EqualFold(c.Request.Header.Get("X-Forwarded-Proto"), "https")
+}
+func (h *AuthHandler) incrementLoginFail(ctx context.Context, username string) error {
+	failKey := "lock:login:fail:" + username
+	count, err := h.redis.Incr(ctx, failKey).Result()
+	if err != nil {
+		return err
+	}
+	if count == 1 {
+		_ = h.redis.Expire(ctx, failKey, h.loginLockTTL).Err()
+	}
+	if count >= int64(h.loginLockThreshold) {
+		_ = h.redis.Set(ctx, "lock:login:"+username, "1", h.loginLockTTL).Err()
+	}
+	return nil
 }

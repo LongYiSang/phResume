@@ -54,3 +54,27 @@ export function useAuthFetch() {
 
   return authFetch;
 }
+
+export function friendlyMessageForStatus(status: number, kind?: "upload" | "pdf" | "login" | "default") {
+  const k = kind ?? "default";
+  if (k === "upload") {
+    if (status === 429) return "上传过于频繁，请稍后再试";
+    if (status === 413) return "文件过大，最大 5MB";
+    if (status === 400) return "不支持的文件类型，请使用 PNG/JPEG/WebP";
+    return "图片上传失败，请重试";
+  }
+  if (k === "pdf") {
+    if (status === 429) return "生成过于频繁，请稍后再试";
+    return "生成任务提交失败，请稍后重试";
+  }
+  if (k === "login") {
+    if (status === 429) return "登录过于频繁或账号已锁定，请稍后再试";
+    if (status === 401 || status === 403) return "账号或密码错误";
+    return "登录失败，请稍后再试";
+  }
+  if (status === 429) return "操作过于频繁，请稍后再试";
+  if (status === 413) return "请求体过大";
+  if (status === 400) return "请求无效";
+  if (status === 401) return "请重新登录";
+  return "请求失败，请稍后重试";
+}

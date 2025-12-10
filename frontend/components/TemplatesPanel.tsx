@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { ResumeData } from "@/types/resume";
-import { useAuthFetch } from "@/hooks/useAuthFetch";
+import { useAuthFetch, friendlyMessageForStatus } from "@/hooks/useAuthFetch";
 import { normalizeResumeContent } from "@/utils/resume";
 import { Button, Input } from "@heroui/react";
 import { X, LayoutTemplate } from "lucide-react";
@@ -60,6 +60,7 @@ export function TemplatesPanel({
         const { API_ROUTES } = await import("@/lib/api-routes");
         const resp = await authFetch(API_ROUTES.TEMPLATES.list());
         if (!resp.ok) {
+          setError(friendlyMessageForStatus(resp.status));
           throw new Error("list templates failed");
         }
         const data = (await resp.json()) as TemplateListItem[];
@@ -91,6 +92,7 @@ export function TemplatesPanel({
       const { API_ROUTES } = await import("@/lib/api-routes");
       const resp = await authFetch(API_ROUTES.TEMPLATES.byId(id));
       if (!resp.ok) {
+        setError(friendlyMessageForStatus(resp.status));
         throw new Error("get template failed");
       }
       const data = await resp.json();
@@ -143,6 +145,7 @@ export function TemplatesPanel({
           setError("已达模板保存上限，请升级会员以扩容。");
           return;
         }
+        setError(friendlyMessageForStatus(resp.status));
         throw new Error("create template failed");
       }
       // 保存成功，刷新列表
@@ -167,6 +170,7 @@ export function TemplatesPanel({
         method: "POST",
       });
       if (!resp.ok) {
+        setError(friendlyMessageForStatus(resp.status, "pdf"));
         throw new Error("generate preview failed");
       }
       await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -197,6 +201,7 @@ export function TemplatesPanel({
         method: "DELETE",
       });
       if (!resp.ok && resp.status !== 204) {
+        setError(friendlyMessageForStatus(resp.status));
         throw new Error("delete template failed");
       }
       setTemplates((prev) => prev.filter((tpl) => tpl.id !== id));

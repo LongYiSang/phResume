@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useAuthFetch } from "@/hooks/useAuthFetch";
+import { useAuthFetch, friendlyMessageForStatus } from "@/hooks/useAuthFetch";
 import { X, Images, Plus } from "lucide-react";
 import { API_ROUTES } from "@/lib/api-routes";
 
@@ -54,6 +54,7 @@ export function AssetsPanel({
       try {
         const resp = await authFetch(API_ROUTES.ASSETS.list({ limit: 60 }));
         if (!resp.ok) {
+          setError(friendlyMessageForStatus(resp.status));
           throw new Error(`list assets failed: ${resp.status}`);
         }
         const data = await resp.json();

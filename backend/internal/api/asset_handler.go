@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	stdhttp "net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -12,23 +13,32 @@ import (
 	"github.com/dutchcoders/go-clamd"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 
 	"phResume/internal/storage"
 )
 
 // AssetHandler 负责处理资产上传与访问。
 type AssetHandler struct {
-	Storage   *storage.Client
-	Logger    *slog.Logger
-	ClamdAddr string
+	Storage                *storage.Client
+	Logger                 *slog.Logger
+	ClamdAddr              string
+	MaxBytes               int
+	MIMEWhitelist          []string
+	RedisClient            *redis.Client
+	uploadRateLimitPerHour int
 }
 
 // NewAssetHandler 返回 AssetHandler 实例。
-func NewAssetHandler(storageClient *storage.Client, logger *slog.Logger, clamdAddr string) *AssetHandler {
+func NewAssetHandler(storageClient *storage.Client, logger *slog.Logger, clamdAddr string, redisClient *redis.Client, uploadRateLimitPerHour int, maxBytes int, mimeWhitelist []string) *AssetHandler {
 	return &AssetHandler{
-		Storage:   storageClient,
-		Logger:    logger,
-		ClamdAddr: clamdAddr,
+		Storage:                storageClient,
+		Logger:                 logger,
+		ClamdAddr:              clamdAddr,
+		MaxBytes:               maxBytes,
+		MIMEWhitelist:          mimeWhitelist,
+		RedisClient:            redisClient,
+		uploadRateLimitPerHour: uploadRateLimitPerHour,
 	}
 }
 
@@ -40,9 +50,26 @@ func (h *AssetHandler) UploadAsset(c *gin.Context) {
 		return
 	}
 
+	// 每用户每小时上传 2 次
+	window := time.Now().UTC().Format("2006010215")
+	rateKey := fmt.Sprintf("rate:upload:%d:%s", userID, window)
+	count, _ := h.RedisClient.Incr(c.Request.Context(), rateKey).Result()
+	if count == 1 {
+		_ = h.RedisClient.Expire(c.Request.Context(), rateKey, time.Hour).Err()
+	}
+	if count > int64(h.uploadRateLimitPerHour) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
+		return
+	}
+
 	file, err := c.FormFile("file")
 	if err != nil {
 		BadRequest(c, "missing file")
+		return
+	}
+
+	if file.Size > int64(h.MaxBytes) {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "payload too large"})
 		return
 	}
 
@@ -78,11 +105,39 @@ func (h *AssetHandler) UploadAsset(c *gin.Context) {
 	}
 	defer fileReader.Close()
 
-	objectKey := fmt.Sprintf("user-assets/%d/%s.png", userID, uuid.NewString())
-	contentType := file.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = "application/octet-stream"
+	head := make([]byte, 512)
+	n, _ := fileReader.Read(head)
+	sniffed := stdhttp.DetectContentType(head[:n])
+	_ = fileReader.Close()
+
+	allowed := false
+	for _, m := range h.MIMEWhitelist {
+		if sniffed == m {
+			allowed = true
+			break
+		}
 	}
+	if !allowed {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported media type"})
+		return
+	}
+
+	fileReader, err = file.Open()
+	if err != nil {
+		Internal(c, "failed to reopen file")
+		return
+	}
+	defer fileReader.Close()
+
+	ext := ".png"
+	switch sniffed {
+	case "image/jpeg":
+		ext = ".jpg"
+	case "image/webp":
+		ext = ".webp"
+	}
+	objectKey := fmt.Sprintf("user-assets/%d/%s%s", userID, uuid.NewString(), ext)
+	contentType := sniffed
 
 	if _, err := h.Storage.UploadFile(c.Request.Context(), objectKey, fileReader, file.Size, contentType); err != nil {
 		h.Logger.Error("upload file", slog.String("error", err.Error()))

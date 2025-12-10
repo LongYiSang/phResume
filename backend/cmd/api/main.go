@@ -124,6 +124,14 @@ func main() {
 		clamdAddr,
 		cfg.API.MaxResumes,
 		cfg.API.MaxTemplates,
+		cfg.API.AllowedOrigins,
+		cfg.API.LoginRateLimitPerHour,
+		cfg.API.LoginLockThreshold,
+		cfg.API.LoginLockTTL,
+		cfg.API.PdfRateLimitPerHour,
+		cfg.API.UploadRateLimitPerHour,
+		cfg.API.UploadMaxBytes,
+		cfg.API.UploadMIMEWhitelist,
 	)
 
 	if err := router.Run(address); err != nil {

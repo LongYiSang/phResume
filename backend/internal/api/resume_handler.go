@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
@@ -23,21 +25,25 @@ import (
 
 // ResumeHandler 负责处理与简历相关的 API 请求。
 type ResumeHandler struct {
-	db             *gorm.DB
-	asynqClient    *asynq.Client
-	storage        *storage.Client
-	internalSecret string
-	maxResumes     int
+	db                  *gorm.DB
+	asynqClient         *asynq.Client
+	storage             *storage.Client
+	internalSecret      string
+	maxResumes          int
+	redisClient         *redis.Client
+	pdfRateLimitPerHour int
 }
 
 // NewResumeHandler 构造 ResumeHandler。
-func NewResumeHandler(db *gorm.DB, asynqClient *asynq.Client, storageClient *storage.Client, internalSecret string, maxResumes int) *ResumeHandler {
+func NewResumeHandler(db *gorm.DB, asynqClient *asynq.Client, storageClient *storage.Client, internalSecret string, maxResumes int, redisClient *redis.Client, pdfRateLimitPerHour int) *ResumeHandler {
 	return &ResumeHandler{
-		db:             db,
-		asynqClient:    asynqClient,
-		storage:        storageClient,
-		internalSecret: internalSecret,
-		maxResumes:     maxResumes,
+		db:                  db,
+		asynqClient:         asynqClient,
+		storage:             storageClient,
+		internalSecret:      internalSecret,
+		maxResumes:          maxResumes,
+		redisClient:         redisClient,
+		pdfRateLimitPerHour: pdfRateLimitPerHour,
 	}
 }
 
@@ -365,6 +371,18 @@ func (h *ResumeHandler) DownloadResume(c *gin.Context) {
 	userID, ok := userIDFromContext(c)
 	if !ok {
 		AbortUnauthorized(c)
+		return
+	}
+
+	// 每用户每小时 3 次限制
+	window := time.Now().UTC().Format("2006010215")
+	rateKey := fmt.Sprintf("rate:pdf:%d:%s", userID, window)
+	count, _ := h.redisClient.Incr(c.Request.Context(), rateKey).Result()
+	if count == 1 {
+		_ = h.redisClient.Expire(c.Request.Context(), rateKey, time.Hour).Err()
+	}
+	if count > int64(h.pdfRateLimitPerHour) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
 		return
 	}
 

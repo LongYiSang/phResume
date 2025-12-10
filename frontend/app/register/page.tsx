@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { friendlyMessageForStatus } from "@/hooks/useAuthFetch";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -38,8 +39,7 @@ export default function RegisterPage() {
         router.push("/login");
         return;
       }
-
-      setError("注册失败，请稍后再试");
+      setError(friendlyMessageForStatus(response.status));
     } catch {
       setError("注册失败，请稍后再试");
     } finally {

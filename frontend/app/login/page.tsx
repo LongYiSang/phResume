@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { friendlyMessageForStatus } from "@/hooks/useAuthFetch";
 import { ArrowRight, Terminal, LayoutGrid, Command } from 'lucide-react';
 import { KawaiiMascot } from "@/components/landing/KawaiiMascot";
 import { TechParticles } from "@/components/landing/TechParticles";
@@ -54,7 +55,7 @@ export default function LoginPage() {
       });
 
       if (!response.ok) {
-        setError("登录失败，请检查账号或稍后重试");
+        setError(friendlyMessageForStatus(response.status, "login"));
         return;
       }
 

@@ -25,7 +25,7 @@ import { AssetsPanel } from "@/components/AssetsPanel";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { useAuth } from "@/context/AuthContext";
 import { ActiveEditorProvider } from "@/context/ActiveEditorContext";
-import { useAuthFetch } from "@/hooks/useAuthFetch";
+import { useAuthFetch, friendlyMessageForStatus } from "@/hooks/useAuthFetch";
 import { Move } from "lucide-react";
 import {
   DEFAULT_LAYOUT_SETTINGS,
@@ -537,13 +537,14 @@ export default function Home() {
       );
 
       if (!response.ok) {
+        setError(friendlyMessageForStatus(response.status, "pdf"));
         throw new Error("下载失败");
       }
 
       // 生成任务已提交，待 WebSocket 完成后再触发 fetchDownloadLink
     } catch (err) {
       console.error("生成任务提交失败", err);
-      setError("生成任务提交失败，请稍后重试");
+      setError((prev) => prev ?? "生成任务提交失败，请稍后重试");
       setTaskStatus("idle");
     }
   };
@@ -1263,6 +1264,7 @@ export default function Home() {
         });
 
         if (!response.ok) {
+          setError(friendlyMessageForStatus(response.status, "upload"));
           throw new Error("upload failed");
         }
 
@@ -1277,7 +1279,7 @@ export default function Home() {
         setAssetPanelRefreshToken((token) => token + 1);
       } catch (err) {
         console.error("图片上传失败", err);
-        setError("图片上传失败，请重试");
+        setError((prev) => prev ?? "图片上传失败，请重试");
       } finally {
         setIsUploadingAsset(false);
         event.target.value = "";

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { ResumeData } from "@/types/resume";
-import { useAuthFetch } from "@/hooks/useAuthFetch";
+import { useAuthFetch, friendlyMessageForStatus } from "@/hooks/useAuthFetch";
 import { normalizeResumeContent } from "@/utils/resume";
 import { Button, Input } from "@heroui/react";
 import { X, FolderOpen } from "lucide-react";
@@ -62,6 +62,7 @@ export function MyResumesPanel({
         const { API_ROUTES } = await import("@/lib/api-routes");
         const resp = await authFetch(API_ROUTES.RESUME.list());
         if (!resp.ok) {
+          setError(friendlyMessageForStatus(resp.status));
           throw new Error(`list resumes failed: ${resp.status}`);
         }
         const data = (await resp.json()) as ResumeListItem[];
@@ -91,6 +92,7 @@ export function MyResumesPanel({
       const { API_ROUTES } = await import("@/lib/api-routes");
       const resp = await authFetch(API_ROUTES.RESUME.list());
       if (!resp.ok) {
+        setError(friendlyMessageForStatus(resp.status));
         throw new Error("reload list failed");
       }
       const data = (await resp.json()) as ResumeListItem[];
@@ -130,6 +132,7 @@ export function MyResumesPanel({
           setError("已达简历保存上限，请升级会员以扩容。");
           return;
         }
+        setError(friendlyMessageForStatus(resp.status));
         throw new Error(`create resume failed: ${resp.status}`);
       }
 
@@ -169,6 +172,7 @@ export function MyResumesPanel({
       const { API_ROUTES } = await import("@/lib/api-routes");
       const resp = await authFetch(API_ROUTES.RESUME.byId(id));
       if (!resp.ok) {
+        setError(friendlyMessageForStatus(resp.status));
         throw new Error(`get resume failed: ${resp.status}`);
       }
       const data = (await resp.json()) as {
@@ -210,6 +214,7 @@ export function MyResumesPanel({
         method: "DELETE",
       });
       if (!resp.ok && resp.status !== 204) {
+        setError(friendlyMessageForStatus(resp.status));
         throw new Error(`delete resume failed: ${resp.status}`);
       }
       await refreshList();

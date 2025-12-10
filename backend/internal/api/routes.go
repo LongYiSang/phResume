@@ -3,6 +3,7 @@ package api
 import (
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
@@ -26,12 +27,36 @@ func RegisterRoutes(
 	clamdAddr string,
 	maxResumes int,
 	maxTemplates int,
+	allowedOrigins []string,
+	loginRateLimitPerHour int,
+	loginLockThreshold int,
+	loginLockTTL time.Duration,
+	pdfRateLimitPerHour int,
+	uploadRateLimitPerHour int,
+	uploadMaxBytes int,
+	uploadMIMEWhitelist []string,
 ) {
-	resumeHandler := NewResumeHandler(db, asynqClient, storageClient, os.Getenv("INTERNAL_API_SECRET"), maxResumes)
-	authHandler := NewAuthHandler(db, authService, redisClient, logger)
-	wsHandler := NewWsHandler(redisClient, authService, logger)
+	resumeHandler := NewResumeHandler(
+		db,
+		asynqClient,
+		storageClient,
+		os.Getenv("INTERNAL_API_SECRET"),
+		maxResumes,
+		redisClient,
+		pdfRateLimitPerHour,
+	)
+	authHandler := NewAuthHandler(
+		db,
+		authService,
+		redisClient,
+		logger,
+		loginRateLimitPerHour,
+		loginLockThreshold,
+		loginLockTTL,
+	)
+	wsHandler := NewWsHandler(redisClient, authService, logger, allowedOrigins)
 	authMiddleware := middleware.AuthMiddleware(authService)
-	assetHandler := NewAssetHandler(storageClient, logger, clamdAddr)
+	assetHandler := NewAssetHandler(storageClient, logger, clamdAddr, redisClient, uploadRateLimitPerHour, uploadMaxBytes, uploadMIMEWhitelist)
 	templateHandler := NewTemplateHandler(db, asynqClient, storageClient, os.Getenv("INTERNAL_API_SECRET"), maxTemplates)
 
 	v1 := router.Group("/v1")

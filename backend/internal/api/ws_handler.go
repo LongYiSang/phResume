@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,25 +19,43 @@ import (
 
 // WsHandler 负责处理 WebSocket 鉴权与消息转发。
 type WsHandler struct {
-	redisClient *redis.Client
-	authService *auth.AuthService
-	logger      *slog.Logger
-	upgrader    websocket.Upgrader
+	redisClient    *redis.Client
+	authService    *auth.AuthService
+	logger         *slog.Logger
+	upgrader       websocket.Upgrader
+	allowedOrigins []string
 }
 
 // NewWsHandler 构造 WebSocket 处理器。
-func NewWsHandler(redisClient *redis.Client, authService *auth.AuthService, logger *slog.Logger) *WsHandler {
-	return &WsHandler{
-		redisClient: redisClient,
-		authService: authService,
-		logger:      logger,
-		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool {
-				// 允许同源请求，实际生产可以结合配置做更严格校验。
+func NewWsHandler(redisClient *redis.Client, authService *auth.AuthService, logger *slog.Logger, allowedOrigins []string) *WsHandler {
+	h := &WsHandler{
+		redisClient:    redisClient,
+		authService:    authService,
+		logger:         logger,
+		allowedOrigins: allowedOrigins,
+	}
+	h.upgrader = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			if origin == "" {
 				return true
-			},
+			}
+			if len(h.allowedOrigins) == 0 {
+				u, err := url.Parse(origin)
+				if err != nil {
+					return false
+				}
+				return strings.EqualFold(u.Host, r.Host)
+			}
+			for _, allowed := range h.allowedOrigins {
+				if origin == allowed {
+					return true
+				}
+			}
+			return false
 		},
 	}
+	return h
 }
 
 type wsAuthMessage struct {
@@ -134,6 +154,12 @@ func (h *WsHandler) readLoop(
 			if err != nil {
 				writeClose(conn, websocket.ClosePolicyViolation, "unauthorized")
 				errCh <- fmt.Errorf("validate token: %w", err)
+				cancel()
+				return
+			}
+			if claims.TokenType != "access" {
+				writeClose(conn, websocket.ClosePolicyViolation, "access token required")
+				errCh <- fmt.Errorf("invalid token type: %s", claims.TokenType)
 				cancel()
 				return
 			}
