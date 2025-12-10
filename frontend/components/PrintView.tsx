@@ -226,9 +226,11 @@ export function PrintView({ resourcePath }: PrintViewProps) {
             }
 
             if (item.type === "divider") {
+              const { borderColor: _dc, color: _dcolor, ...restDivider } =
+                (item.style ?? {}) as Record<string, unknown>;
               return (
                 <div key={item.id} style={commonCellStyle}>
-                  <DividerItem style={item.style as CSSProperties | undefined} />
+                  <DividerItem style={restDivider as CSSProperties | undefined} />
                 </div>
               );
             }

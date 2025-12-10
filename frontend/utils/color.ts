@@ -104,9 +104,13 @@ export function extractBackgroundStyle(style?: ResumeItemStyle): {
     return {};
   }
 
-  const rawColor =
+  const rawColorInput =
     typeof style.backgroundColor === "string" && style.backgroundColor.trim().length > 0
-      ? style.backgroundColor
+      ? style.backgroundColor.trim()
+      : undefined;
+  const rawColor =
+    rawColorInput && rawColorInput.toLowerCase() !== "transparent"
+      ? rawColorInput
       : undefined;
   const rawOpacity =
     typeof style.backgroundOpacity === "number"

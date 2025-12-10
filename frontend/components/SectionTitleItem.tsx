@@ -18,17 +18,10 @@ export function SectionTitleItem({
   readOnly = false,
   accentColor = "#000000",
 }: SectionTitleItemProps) {
-  // 提取样式中的颜色，如果 style 中有 backgroundColor 则优先使用，否则使用 accentColor
-  // 注意：ResumeItem 的 style 通常包含 color, fontFamily 等
-  // 对于 SectionTitle，我们需要区分：
-  // 1. 容器样式 (style)
-  // 2. 文字块背景色 (style.backgroundColor 或 accentColor)
-  // 3. 文字颜色 (通常是白色，或者由 style.color 覆盖)
-  // 4. 线条颜色 (style.borderColor 或 accentColor)
-
   const backgroundColor = style?.backgroundColor ?? accentColor;
-  const lineColor = style?.borderColor ?? backgroundColor;
-  const textColor = style?.color ?? "#ffffff";
+  const isTransparent = backgroundColor === "transparent";
+  const lineColor = style?.borderColor ?? (isTransparent ? accentColor : backgroundColor);
+  const textColor = style?.color ?? (isTransparent ? accentColor : "#ffffff");
 
   // 从 style 中剔除会导致冲突或不应应用在容器上的属性
   // 尤其是 borderColor 与 border: "none" 混用会导致 React 报错
@@ -60,23 +53,27 @@ export function SectionTitleItem({
 
   // 文字块样式
   const textBlockStyle: CSSProperties = {
-    backgroundColor: backgroundColor,
+    backgroundColor: isTransparent ? "transparent" : backgroundColor,
     color: textColor,
-    padding: "2px 12px",
-    minWidth: "100px", // 最小宽度
-    flexShrink: 0, // 不允许压缩
+    padding: "0 6px",
+    minWidth: "100px",
+    flexShrink: 0,
     position: "relative",
     borderTopLeftRadius: style?.borderTopLeftRadius,
     borderTopRightRadius: style?.borderTopRightRadius,
+    zIndex: 1,
   };
 
   // 线条样式
   const lineStyle: CSSProperties = {
-    flex: 1, // 占据剩余空间
-    height: "3px", // 实线高度
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: "1px",
     backgroundColor: lineColor,
-    marginBottom: "0px", // 移除底部偏移，使其与文字块底部对齐
-    alignSelf: "flex-end", // 确保线条在底部
+    zIndex: 0,
+    pointerEvents: "none",
   };
 
   // 传递给 TextItem 的样式
@@ -86,13 +83,17 @@ export function SectionTitleItem({
     backgroundColor: "transparent",
     fontSize: style?.fontSize,
     fontFamily: style?.fontFamily,
-    fontWeight: "bold", // 默认为粗体
+    lineHeight: style?.lineHeight ?? 1.2,
+    fontWeight: "bold",
     margin: 0,
+    minHeight: 0,
+    height: "auto",
+    display: "inline-block",
   };
 
   return (
-    <div style={containerStyle} className="section-title-container">
-      <div style={textBlockStyle}>
+    <div style={{ ...containerStyle, position: "relative" }} className="section-title-container">
+      <div style={{ ...textBlockStyle }}>
         <TextItem
           html={html}
           style={textItemStyle}

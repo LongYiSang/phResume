@@ -828,14 +828,15 @@ export default function Home() {
           if (item.type === "divider") {
             const nextThickness =
               extractDividerThickness(item.style) ?? DEFAULT_DIVIDER_THICKNESS;
+            const nextStyle: ResumeItemStyle = {
+              ...(item.style ?? {}),
+            };
+            delete (nextStyle as unknown as Record<string, unknown>)["borderColor"];
+            delete (nextStyle as unknown as Record<string, unknown>)["color"];
+            nextStyle.borderTop = `${nextThickness}px solid ${safeColor}`;
             return {
               ...item,
-              style: {
-                ...(item.style ?? {}),
-                borderTop: `${nextThickness}px solid ${safeColor}`,
-                borderColor: safeColor,
-                color: safeColor,
-              },
+              style: nextStyle,
             };
           }
           return {
@@ -865,6 +866,27 @@ export default function Home() {
           };
           const trimmed = newColor?.trim();
           if (!trimmed) {
+            if (item.type === "section_title") {
+              const accent =
+                prev.layout_settings?.accent_color ?? DEFAULT_LAYOUT_SETTINGS.accent_color;
+              nextStyle.backgroundColor = "transparent";
+              delete nextStyle.backgroundOpacity;
+              const currentTextColor = (nextStyle.color ?? "").toString().toLowerCase();
+              const isWhite =
+                currentTextColor === "#ffffff" ||
+                currentTextColor === "white" ||
+                currentTextColor.includes("rgb(255, 255, 255");
+              if (!currentTextColor || isWhite) {
+                nextStyle.color = accent;
+              }
+              if (!nextStyle.borderColor) {
+                nextStyle.borderColor = accent;
+              }
+              return {
+                ...item,
+                style: nextStyle,
+              };
+            }
             delete nextStyle.backgroundColor;
             delete nextStyle.backgroundOpacity;
             return {
@@ -929,14 +951,15 @@ export default function Home() {
           }
           const currentColor =
             extractDividerColor(item.style) ?? accent;
+          const nextStyle: ResumeItemStyle = {
+            ...(item.style ?? {}),
+          };
+          delete (nextStyle as unknown as Record<string, unknown>)["borderColor"];
+          delete (nextStyle as unknown as Record<string, unknown>)["color"];
+          nextStyle.borderTop = `${clamped}px solid ${currentColor}`;
           return {
             ...item,
-            style: {
-              ...(item.style ?? {}),
-              borderTop: `${clamped}px solid ${currentColor}`,
-              borderColor: currentColor,
-              color: currentColor,
-            },
+            style: nextStyle,
           };
         });
         return { ...prev, items: updatedItems };
@@ -1628,9 +1651,10 @@ export default function Home() {
                         ...(item.style ?? {}),
                       };
 
+                      const { borderColor: _dc, color: _dcolor, ...restDividerStyle } =
+                        (item.style ?? {}) as Record<string, unknown>;
                       const dividerStyle = {
-                        borderColor: resumeData.layout_settings.accent_color,
-                        ...(item.style ?? {}),
+                        ...(restDividerStyle as ResumeItemStyle),
                       };
 
                       const imageStyle = {
