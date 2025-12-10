@@ -194,6 +194,8 @@ func (h *WsHandler) subscribeLoop(
 	log.Info("subscribed to redis channel", slog.String("channel", channel))
 
 	ch := pubsub.Channel()
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
 
 	for {
 		select {
@@ -209,6 +211,13 @@ func (h *WsHandler) subscribeLoop(
 			log.Info("forwarding message to client", slog.String("channel", channel))
 			if err := conn.WriteMessage(websocket.TextMessage, []byte(msg.Payload)); err != nil {
 				errCh <- fmt.Errorf("write message: %w", err)
+				cancel()
+				return
+			}
+		case <-ticker.C:
+			deadline := time.Now().Add(5 * time.Second)
+			if err := conn.WriteControl(websocket.PingMessage, []byte("ping"), deadline); err != nil {
+				errCh <- fmt.Errorf("write ping: %w", err)
 				cancel()
 				return
 			}

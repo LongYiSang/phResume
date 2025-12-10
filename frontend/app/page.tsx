@@ -202,6 +202,10 @@ export default function Home() {
   const [assetPanelRefreshToken, setAssetPanelRefreshToken] = useState(0);
   const [zoom, setZoom] = useState(1);
   const socketRef = useRef<WebSocket | null>(null);
+  const heartbeatTimerRef = useRef<number | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const previewWindowRef = useRef<Window | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // 全局撤销/重做（不包含文本框内字符级编辑）
   const [historyStack, setHistoryStack] = useState<ResumeData[]>([]);
@@ -323,7 +327,17 @@ export default function Home() {
 
         const data = await response.json();
         if (data?.url) {
-          window.open(data.url, "_blank", "noopener");
+          if (previewWindowRef.current && !previewWindowRef.current.closed) {
+            previewWindowRef.current.location.href = data.url;
+            try { previewWindowRef.current.focus(); } catch {}
+            previewWindowRef.current = null;
+          } else {
+            try {
+              window.open(data.url, "_blank", "noopener");
+            } catch {
+              window.location.href = data.url;
+            }
+          }
         } else {
           throw new Error("missing url in response");
         }
@@ -358,41 +372,84 @@ export default function Home() {
       return;
     }
 
-    const ws = new WebSocket(wsURL);
-    socketRef.current = ws;
+    const connect = () => {
+      const ws = new WebSocket(wsURL);
+      socketRef.current = ws;
 
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "auth", token: accessToken }));
-      console.log("WebSocket connected and authenticated.");
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-
-        if (data.status === "completed" && typeof data.resume_id === "number") {
-          setTaskStatus("completed");
-          fetchDownloadLink(data.resume_id);
+      ws.onopen = () => {
+        reconnectAttemptsRef.current = 0;
+        ws.send(JSON.stringify({ type: "auth", token: accessToken }));
+        console.log("WebSocket connected and authenticated.");
+        if (heartbeatTimerRef.current) {
+          window.clearInterval(heartbeatTimerRef.current);
+          heartbeatTimerRef.current = null;
         }
-      } catch (parseError) {
-        console.error("Invalid WebSocket payload:", parseError);
-      }
+        heartbeatTimerRef.current = window.setInterval(() => {
+          try {
+            ws.send(JSON.stringify({ type: "ping" }));
+          } catch {}
+        }, 45000);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.status === "completed" && typeof data.resume_id === "number") {
+            setTaskStatus("completed");
+            fetchDownloadLink(data.resume_id);
+          }
+        } catch (parseError) {
+          console.error("Invalid WebSocket payload:", parseError);
+        }
+      };
+
+      const scheduleReconnect = () => {
+        socketRef.current = null;
+        if (heartbeatTimerRef.current) {
+          window.clearInterval(heartbeatTimerRef.current);
+          heartbeatTimerRef.current = null;
+        }
+        const attempt = Math.min(reconnectAttemptsRef.current + 1, 8);
+        reconnectAttemptsRef.current = attempt;
+        const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
+        if (reconnectTimerRef.current) {
+          window.clearTimeout(reconnectTimerRef.current);
+          reconnectTimerRef.current = null;
+        }
+        reconnectTimerRef.current = window.setTimeout(() => {
+          if (isAuthenticated && accessToken) {
+            connect();
+          }
+        }, delay);
+      };
+
+      ws.onclose = () => {
+        console.log("WebSocket disconnected.");
+        scheduleReconnect();
+      };
+
+      ws.onerror = () => {
+        console.warn("WebSocket error, closing connection.");
+        try { ws.close(); } catch {}
+        scheduleReconnect();
+      };
     };
 
-    ws.onclose = () => {
-      console.log("WebSocket disconnected.");
-      socketRef.current = null;
-    };
-
-    ws.onerror = () => {
-      console.warn("WebSocket error, closing connection.");
-      ws.close();
-      socketRef.current = null;
-    };
+    connect();
 
     return () => {
-      ws.close();
-      socketRef.current = null;
+      if (reconnectTimerRef.current) {
+        window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      if (heartbeatTimerRef.current) {
+        window.clearInterval(heartbeatTimerRef.current);
+        heartbeatTimerRef.current = null;
+      }
+      if (socketRef.current) {
+        try { socketRef.current.close(); } catch {}
+        socketRef.current = null;
+      }
     };
   }, [isAuthenticated, accessToken, fetchDownloadLink, resolveWebSocketURL]);
 
@@ -528,6 +585,9 @@ export default function Home() {
 
     setError(null);
     setTaskStatus("pending");
+    try {
+      previewWindowRef.current = window.open("about:blank", "_blank");
+    } catch {}
 
     // 不再主动轮询，等待 WebSocket 完成消息后再打开最新 PDF
 
