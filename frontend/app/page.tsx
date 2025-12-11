@@ -27,6 +27,7 @@ import { useAuth } from "@/context/AuthContext";
 import { ActiveEditorProvider } from "@/context/ActiveEditorContext";
 import { useAuthFetch, friendlyMessageForStatus } from "@/hooks/useAuthFetch";
 import { Move } from "lucide-react";
+import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button } from "@heroui/react";
 import {
   DEFAULT_LAYOUT_SETTINGS,
   GRID_COLS,
@@ -227,6 +228,9 @@ export default function Home() {
   const [generationProgress, setGenerationProgress] = useState(0);
   const [isOverlayVisible, setIsOverlayVisible] = useState(false);
   const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [isRateLimitModalOpen, setIsRateLimitModalOpen] = useState(false);
+  const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
+  const [rateLimitError, setRateLimitError] = useState<string | null>(null);
 
   useEffect(() => {
     if (taskStatus === "pending") {
@@ -660,14 +664,24 @@ export default function Home() {
       );
 
       if (!response.ok) {
-        setError(friendlyMessageForStatus(response.status, "pdf"));
+        const msg = friendlyMessageForStatus(response.status, "pdf");
+        if (response.status === 429) {
+          setRateLimitMessage(msg);
+          setRateLimitError("下载失败");
+          setIsRateLimitModalOpen(true);
+          setError(null);
+        } else {
+          setError(msg);
+        }
         throw new Error("下载失败");
       }
 
       // 生成任务已提交，待 WebSocket 完成后展示下载按钮
     } catch (err) {
       console.error("生成任务提交失败", err);
-      setError((prev) => prev ?? "生成任务提交失败，请稍后重试");
+      if (!isRateLimitModalOpen) {
+        setError((prev) => prev ?? "生成任务提交失败，请稍后重试");
+      }
       setTaskStatus("idle");
     }
   };
@@ -1558,6 +1572,28 @@ export default function Home() {
         
         <PDFGenerationOverlay isVisible={isOverlayVisible} progress={generationProgress} />
 
+        <Modal isOpen={isRateLimitModalOpen} onOpenChange={setIsRateLimitModalOpen}>
+          <ModalContent>
+            {(onClose) => (
+              <>
+                <ModalHeader>生成次数上限</ModalHeader>
+                <ModalBody>
+                  <div className="space-y-2">
+                    <div className="text-sm text-kawaii-text">{rateLimitMessage ?? "生成过于频繁，请稍后再试"}</div>
+                    <div className="text-xs text-slate-500">错误类型：Console Error</div>
+                    <div className="text-xs text-slate-500">错误信息：{rateLimitError ?? "下载失败"}</div>
+                    <div className="text-xs text-slate-500">错误位置：handleDownload (app/page.tsx:664:15)</div>
+                    <div className="text-xs text-slate-500">Next.js 版本：16.0.1 (Turbopack)</div>
+                  </div>
+                </ModalBody>
+                <ModalFooter>
+                  <Button color="primary" onPress={onClose}>知道了</Button>
+                </ModalFooter>
+              </>
+            )}
+          </ModalContent>
+        </Modal>
+
       {isFetchingResume && (
         <div className="text-sm text-zinc-500 dark:text-zinc-400">
           正在加载最新简历...
@@ -1921,7 +1957,7 @@ export default function Home() {
 
       
 
-      {error && (
+      {error && !isRateLimitModalOpen && (
         <div className="rounded-md bg-red-100 px-4 py-2 text-sm text-red-700 dark:bg-red-900/40 dark:text-red-200">
           {error}
         </div>
