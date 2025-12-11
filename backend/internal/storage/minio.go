@@ -105,6 +105,22 @@ func (c *Client) GeneratePresignedURL(ctx context.Context, objectKey string, dur
 	return presignedURL.String(), nil
 }
 
+// GeneratePresignedURLWithParams 生成带自定义响应参数的限时下载链接。
+func (c *Client) GeneratePresignedURLWithParams(ctx context.Context, objectKey string, duration time.Duration, params map[string]string) (string, error) {
+	var v url.Values
+	if params != nil {
+		v = url.Values{}
+		for k, val := range params {
+			v.Set(k, val)
+		}
+	}
+	presignedURL, err := c.publicClient.PresignedGetObject(ctx, c.bucketName, objectKey, duration, v)
+	if err != nil {
+		return "", fmt.Errorf("generate presigned url with params for %q: %w", objectKey, err)
+	}
+	return presignedURL.String(), nil
+}
+
 // ListObjects 列出指定前缀下的对象元数据。
 func (c *Client) ListObjects(ctx context.Context, prefix string, limit int) ([]ObjectMeta, error) {
 	if limit <= 0 {

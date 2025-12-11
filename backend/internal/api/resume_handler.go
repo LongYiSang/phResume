@@ -470,7 +470,19 @@ func (h *ResumeHandler) GetDownloadLink(c *gin.Context) {
 		return
 	}
 
-	signedURL, err := h.storage.GeneratePresignedURL(c.Request.Context(), resume.PdfUrl, 5*time.Minute)
+	forceDownload := strings.EqualFold(strings.TrimSpace(c.Query("download")), "1")
+	filename := strings.TrimSpace(c.Query("filename"))
+	if filename == "" {
+		filename = fmt.Sprintf("Resume-%d.pdf", resume.ID)
+	}
+
+	params := map[string]string{}
+	if forceDownload {
+		// 兼容不同 UA 的文件名参数
+		params["response-content-disposition"] = fmt.Sprintf("attachment; filename=\"%s\"", filename)
+	}
+
+	signedURL, err := h.storage.GeneratePresignedURLWithParams(c.Request.Context(), resume.PdfUrl, 5*time.Minute, params)
 	if err != nil {
 		Internal(c, "failed to generate download link")
 		return

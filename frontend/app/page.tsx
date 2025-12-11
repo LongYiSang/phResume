@@ -45,6 +45,7 @@ import type {
 import { Watermark } from "@/components/Watermark";
 
 type TaskStatus = "idle" | "pending" | "completed";
+import { PDFGenerationOverlay } from "@/components/PDFGenerationOverlay";
 
 const CANVAS_WIDTH = 794; // 必须与 pdf_template.go (794px) 匹配
 const CANVAS_HEIGHT = Math.round((CANVAS_WIDTH * 297) / 210);
@@ -193,6 +194,10 @@ export default function Home() {
   const [isFetchingResume, setIsFetchingResume] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [taskStatus, setTaskStatus] = useState<TaskStatus>("idle");
+  const [readyResumeId, setReadyResumeId] = useState<number | null>(null);
+  const [downloadDeadline, setDownloadDeadline] = useState<number | null>(null);
+  const [downloadCountdown, setDownloadCountdown] = useState<number>(0);
+  const countdownTimerRef = useRef<number | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [isUploadingAsset, setIsUploadingAsset] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
@@ -219,6 +224,46 @@ export default function Home() {
   // 拖拽/缩放标记
   const isDraggingRef = useRef(false);
   const isResizingRef = useRef(false);
+  const [generationProgress, setGenerationProgress] = useState(0);
+  const [isOverlayVisible, setIsOverlayVisible] = useState(false);
+  const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (taskStatus === "pending") {
+      setIsOverlayVisible(true);
+      setGenerationProgress(0);
+      progressTimerRef.current = setInterval(() => {
+        setGenerationProgress((prev) => {
+          if (prev >= 80) return prev;
+          return prev + 5;
+        });
+      }, 1000);
+    } else if (taskStatus === "completed") {
+      if (progressTimerRef.current) {
+        clearInterval(progressTimerRef.current);
+        progressTimerRef.current = null;
+      }
+      setGenerationProgress(100);
+      // 延迟隐藏遮罩层，让用户看到完成动画
+      const hideTimer = setTimeout(() => {
+        setIsOverlayVisible(false);
+      }, 2000); // 0.5s buffer + 1.5s success show
+      return () => clearTimeout(hideTimer);
+    } else {
+      if (progressTimerRef.current) {
+        clearInterval(progressTimerRef.current);
+        progressTimerRef.current = null;
+      }
+      setGenerationProgress(0);
+      setIsOverlayVisible(false);
+    }
+
+    return () => {
+      if (progressTimerRef.current) {
+        clearInterval(progressTimerRef.current);
+      }
+    };
+  }, [taskStatus]);
 
   const applyServerResume = useCallback(
     (payload: { id: number | null; title: string; content: ResumeData | null }) => {
@@ -307,7 +352,7 @@ export default function Home() {
   );
 
   const fetchDownloadLink = useCallback(
-    async (resumeId: number) => {
+    async (resumeId: number, forceDownload = false) => {
       if (!isAuthenticated) {
         setError("请先登录");
         setTaskStatus("idle");
@@ -317,9 +362,13 @@ export default function Home() {
       setError(null);
 
       try {
-        const response = await authFetch(
-          API_ROUTES.RESUME.downloadLink(resumeId),
-        );
+        const url = new URL(API_ROUTES.RESUME.downloadLink(resumeId), window.location.origin);
+        if (forceDownload) {
+          url.searchParams.set("download", "1");
+          const fname = `Resume-${resumeId}.pdf`;
+          url.searchParams.set("filename", fname);
+        }
+        const response = await authFetch(url.toString());
 
         if (!response.ok) {
           throw new Error("failed to fetch download link");
@@ -327,16 +376,10 @@ export default function Home() {
 
         const data = await response.json();
         if (data?.url) {
-          if (previewWindowRef.current && !previewWindowRef.current.closed) {
-            previewWindowRef.current.location.href = data.url;
-            try { previewWindowRef.current.focus(); } catch {}
-            previewWindowRef.current = null;
-          } else {
-            try {
-              window.open(data.url, "_blank", "noopener");
-            } catch {
-              window.location.href = data.url;
-            }
+          try {
+            window.location.href = data.url;
+          } catch {
+            window.open(data.url, "_blank");
           }
         } else {
           throw new Error("missing url in response");
@@ -350,6 +393,11 @@ export default function Home() {
     },
     [isAuthenticated, authFetch],
   );
+
+  const handleDownloadClick = useCallback(async () => {
+    if (!readyResumeId) return;
+    await fetchDownloadLink(readyResumeId, true);
+  }, [readyResumeId, fetchDownloadLink]);
 
   useEffect(() => {
     if (!isCheckingAuth && isAuthenticated === false) {
@@ -396,7 +444,24 @@ export default function Home() {
           const data = JSON.parse(event.data);
           if (data.status === "completed" && typeof data.resume_id === "number") {
             setTaskStatus("completed");
-            fetchDownloadLink(data.resume_id);
+            setReadyResumeId(data.resume_id);
+            const now = Date.now();
+            const ttlMs = 5 * 60 * 1000; // 与后端 TTL 对齐 5 分钟
+            setDownloadDeadline(now + ttlMs);
+            setDownloadCountdown(Math.ceil(ttlMs / 1000));
+            if (countdownTimerRef.current) {
+              window.clearInterval(countdownTimerRef.current);
+            }
+            countdownTimerRef.current = window.setInterval(() => {
+              setDownloadCountdown((prev) => {
+                const next = Math.max(0, prev - 1);
+                if (next === 0 && countdownTimerRef.current) {
+                  window.clearInterval(countdownTimerRef.current);
+                  countdownTimerRef.current = null;
+                }
+                return next;
+              });
+            }, 1000);
           }
         } catch (parseError) {
           console.error("Invalid WebSocket payload:", parseError);
@@ -585,9 +650,7 @@ export default function Home() {
 
     setError(null);
     setTaskStatus("pending");
-    try {
-      previewWindowRef.current = window.open("about:blank", "_blank");
-    } catch {}
+    // 不再预开标签，改为等待生成完成后由用户点击下载
 
     // 不再主动轮询，等待 WebSocket 完成消息后再打开最新 PDF
 
@@ -601,7 +664,7 @@ export default function Home() {
         throw new Error("下载失败");
       }
 
-      // 生成任务已提交，待 WebSocket 完成后再触发 fetchDownloadLink
+      // 生成任务已提交，待 WebSocket 完成后展示下载按钮
     } catch (err) {
       console.error("生成任务提交失败", err);
       setError((prev) => prev ?? "生成任务提交失败，请稍后重试");
@@ -1493,7 +1556,7 @@ export default function Home() {
     <ActiveEditorProvider>
       <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-6 py-12">
         
-        
+        <PDFGenerationOverlay isVisible={isOverlayVisible} progress={generationProgress} />
 
       {isFetchingResume && (
         <div className="text-sm text-zinc-500 dark:text-zinc-400">
@@ -1571,6 +1634,8 @@ export default function Home() {
               onUpdateTitle={setTitle}
               onSave={handleSave}
               onDownload={handleDownload}
+              onDownloadLink={handleDownloadClick}
+              savedResumeId={savedResumeId}
               historyCanUndo={historyStack.length > 0}
               historyCanRedo={redoStack.length > 0}
               onUndo={handleUndo}
@@ -1657,6 +1722,8 @@ export default function Home() {
               }}
               zoom={zoom}
               setZoom={setZoom}
+              taskStatus={taskStatus}
+              downloadCountdown={downloadCountdown}
             />
           )}
         </div>
@@ -1850,17 +1917,9 @@ export default function Home() {
 
       
 
-      {savedResumeId !== null && (
-        <div className="text-sm text-zinc-500 dark:text-zinc-400">
-          已保存的简历 ID：{savedResumeId}
-        </div>
-      )}
+      
 
-      {taskStatus === "pending" && (
-        <div className="text-sm text-zinc-500 dark:text-zinc-400">
-          正在生成 PDF，请稍候...
-        </div>
-      )}
+      
 
       {error && (
         <div className="rounded-md bg-red-100 px-4 py-2 text-sm text-red-700 dark:bg-red-900/40 dark:text-red-200">
