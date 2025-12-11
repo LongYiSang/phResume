@@ -31,10 +31,11 @@ type AuthHandler struct {
 	loginRateLimitPerHour int
 	loginLockThreshold    int
 	loginLockTTL          time.Duration
+	cookieDomain          string
 }
 
 // NewAuthHandler 构造认证处理器。
-func NewAuthHandler(db *gorm.DB, authService *auth.AuthService, redisClient redis.UniversalClient, logger *slog.Logger, loginRateLimitPerHour int, loginLockThreshold int, loginLockTTL time.Duration) *AuthHandler {
+func NewAuthHandler(db *gorm.DB, authService *auth.AuthService, redisClient redis.UniversalClient, logger *slog.Logger, loginRateLimitPerHour int, loginLockThreshold int, loginLockTTL time.Duration, cookieDomain string) *AuthHandler {
 	return &AuthHandler{
 		db:                    db,
 		authService:           authService,
@@ -43,6 +44,7 @@ func NewAuthHandler(db *gorm.DB, authService *auth.AuthService, redisClient redi
 		loginRateLimitPerHour: loginRateLimitPerHour,
 		loginLockThreshold:    loginLockThreshold,
 		loginLockTTL:          loginLockTTL,
+		cookieDomain:          cookieDomain,
 	}
 }
 
@@ -284,6 +286,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		Secure:   h.isHTTPSRequest(c),
 		HttpOnly: true,
 		SameSite: stdhttp.SameSiteLaxMode,
+		Domain:   h.getCookieDomain(),
 	})
 	c.Status(http.StatusOK)
 }
@@ -313,6 +316,8 @@ func (h *AuthHandler) setRefreshCookie(c *gin.Context, refreshToken string) {
 		Secure:   h.isHTTPSRequest(c),
 		HttpOnly: true,
 		SameSite: stdhttp.SameSiteLaxMode,
+		Domain:   h.getCookieDomain(),
+		Expires:  time.Now().Add(h.authService.RefreshTokenTTL()),
 	}
 	stdhttp.SetCookie(c.Writer, cookie)
 }
@@ -349,6 +354,7 @@ func (h *AuthHandler) isHTTPSRequest(c *gin.Context) bool {
 	}
 	return strings.EqualFold(c.Request.Header.Get("X-Forwarded-Proto"), "https")
 }
+func (h *AuthHandler) getCookieDomain() string { return strings.TrimSpace(h.cookieDomain) }
 func (h *AuthHandler) incrementLoginFail(ctx context.Context, username string) error {
 	failKey := "lock:login:fail:" + username
 	count, err := h.redis.Incr(ctx, failKey).Result()

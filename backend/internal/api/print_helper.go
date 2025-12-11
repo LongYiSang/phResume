@@ -41,6 +41,12 @@ func inlineContentImages(ctx context.Context, storageClient *storage.Client, own
 				msg:    "invalid image object key",
 			}
 		}
+		if !isValidUserAssetObjectKey(ownerID, objectKey) {
+			return &inlineImageError{
+				status: http.StatusForbidden,
+				msg:    "invalid image object key",
+			}
+		}
 		obj, err := storageClient.GetObject(ctx, objectKey)
 		if err != nil {
 			return fmt.Errorf("failed to fetch image: %w", err)

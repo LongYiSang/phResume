@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
@@ -272,17 +271,6 @@ func (h *TemplateHandler) GeneratePreview(c *gin.Context) {
 
 // GET /v1/templates/print/:id
 func (h *TemplateHandler) GetPrintTemplateData(c *gin.Context) {
-	if h.internalSecret == "" {
-		Internal(c, "internal api secret is not configured")
-		return
-	}
-
-	token := strings.TrimSpace(c.Query("internal_token"))
-	if token == "" || token != h.internalSecret {
-		Unauthorized(c)
-		return
-	}
-
 	templateID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		BadRequest(c, "invalid template id")

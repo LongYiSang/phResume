@@ -36,6 +36,7 @@ type APIConfig struct {
 	UploadMIMEWhitelist    []string      `mapstructure:"-"`
 	PdfRateLimitPerHour    int           `mapstructure:"pdf_rate_limit_per_hour"`
 	UploadRateLimitPerHour int           `mapstructure:"upload_rate_limit_per_hour"`
+	CookieDomain           string        `mapstructure:"cookie_domain"`
 }
 
 // DatabaseConfig contains connection options for PostgreSQL.
@@ -147,6 +148,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("api.upload_mime_whitelist", "image/png,image/jpeg,image/webp")
 	v.SetDefault("api.pdf_rate_limit_per_hour", 3)
 	v.SetDefault("api.upload_rate_limit_per_hour", 2)
+	v.SetDefault("api.cookie_domain", "")
 	v.SetDefault("database.host", "localhost")
 	v.SetDefault("database.port", 5432)
 	v.SetDefault("database.name", "phresume")
@@ -178,6 +180,7 @@ func bindEnv(v *viper.Viper) error {
 		"api.upload_mime_whitelist":      "API_UPLOAD_MIME_WHITELIST",
 		"api.pdf_rate_limit_per_hour":    "API_PDF_RATE_LIMIT_PER_HOUR",
 		"api.upload_rate_limit_per_hour": "API_UPLOAD_RATE_LIMIT_PER_HOUR",
+		"api.cookie_domain":              "API_COOKIE_DOMAIN",
 		"database.host":                  "DATABASE_HOST",
 		"database.port":                  "DATABASE_PORT",
 		"database.name":                  "POSTGRES_DB",

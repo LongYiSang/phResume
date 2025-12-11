@@ -493,17 +493,6 @@ func (h *ResumeHandler) GetDownloadLink(c *gin.Context) {
 
 // GetPrintResumeData 返回渲染 PDF 所需的 JSON 数据，附带预签名图像链接。
 func (h *ResumeHandler) GetPrintResumeData(c *gin.Context) {
-	if h.internalSecret == "" {
-		Internal(c, "internal api secret is not configured")
-		return
-	}
-
-	token := strings.TrimSpace(c.Query("internal_token"))
-	if token == "" || token != h.internalSecret {
-		Unauthorized(c)
-		return
-	}
-
 	resumeID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		BadRequest(c, "invalid resume id")

@@ -7,7 +7,6 @@ import (
 	stdhttp "net/http"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/dutchcoders/go-clamd"
@@ -209,8 +208,7 @@ func (h *AssetHandler) GetAssetURL(c *gin.Context) {
 		return
 	}
 
-	expectedPrefix := fmt.Sprintf("user-assets/%d/", userID)
-	if !strings.HasPrefix(objectKey, expectedPrefix) {
+	if !isValidUserAssetObjectKey(userID, objectKey) {
 		Forbidden(c, "access denied")
 		return
 	}

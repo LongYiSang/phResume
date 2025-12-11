@@ -132,6 +132,7 @@ func main() {
 		cfg.API.UploadRateLimitPerHour,
 		cfg.API.UploadMaxBytes,
 		cfg.API.UploadMIMEWhitelist,
+		cfg.API.CookieDomain,
 	)
 
 	if err := router.Run(address); err != nil {

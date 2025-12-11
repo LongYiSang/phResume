@@ -35,6 +35,7 @@ func RegisterRoutes(
 	uploadRateLimitPerHour int,
 	uploadMaxBytes int,
 	uploadMIMEWhitelist []string,
+	cookieDomain string,
 ) {
 	resumeHandler := NewResumeHandler(
 		db,
@@ -53,6 +54,7 @@ func RegisterRoutes(
 		loginRateLimitPerHour,
 		loginLockThreshold,
 		loginLockTTL,
+		cookieDomain,
 	)
 	wsHandler := NewWsHandler(redisClient, authService, logger, allowedOrigins)
 	authMiddleware := middleware.AuthMiddleware(authService)
@@ -71,8 +73,8 @@ func RegisterRoutes(
 			authGroup.POST("/logout", authMiddleware, authHandler.Logout)
 		}
 
-		v1.GET("/resume/print/:id", resumeHandler.GetPrintResumeData)
-		v1.GET("/templates/print/:id", templateHandler.GetPrintTemplateData)
+		v1.GET("/resume/print/:id", middleware.InternalSecretMiddleware(resumeHandler.internalSecret), resumeHandler.GetPrintResumeData)
+		v1.GET("/templates/print/:id", middleware.InternalSecretMiddleware(templateHandler.internalSecret), templateHandler.GetPrintTemplateData)
 
 		resumeGroup := v1.Group("/resume")
 		resumeGroup.Use(authMiddleware)
