@@ -99,11 +99,20 @@ func loadDatabaseConfig(host string, port int, name, user, password, sslmode str
 	if strings.TrimSpace(name) == "" {
 		name = os.Getenv("POSTGRES_DB")
 	}
+	if strings.TrimSpace(name) == "" {
+		name = os.Getenv("DB_NAME")
+	}
 	if strings.TrimSpace(user) == "" {
 		user = os.Getenv("POSTGRES_USER")
 	}
+	if strings.TrimSpace(user) == "" {
+		user = os.Getenv("DB_USER")
+	}
 	if strings.TrimSpace(password) == "" {
 		password = os.Getenv("POSTGRES_PASSWORD")
+	}
+	if strings.TrimSpace(password) == "" {
+		password = os.Getenv("DB_PASSWORD")
 	}
 	if strings.TrimSpace(sslmode) == "" {
 		sslmode = os.Getenv("DATABASE_SSLMODE")

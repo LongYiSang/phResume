@@ -15,9 +15,9 @@ x-main-resources: &main-resources
         memory: 128M
 
 x-db-env: &db-env
-  POSTGRES_USER: phresume
-  POSTGRES_PASSWORD: phresume
-  POSTGRES_DB: phresume
+  POSTGRES_USER: ${DB_USER:-phresume}
+  POSTGRES_PASSWORD: ${DB_PASSWORD:?请在 .env 中设置 DB_PASSWORD}
+  POSTGRES_DB: ${DB_NAME:-phresume}
 
 x-jwt-env: &jwt-env
   JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
@@ -62,8 +62,8 @@ services:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?请在 .env 中设置 MINIO_ROOT_PASSWORD}
     ports:
       - '9000:9000'
       - '9001:9001'
@@ -97,11 +97,11 @@ services:
       API_PORT: '8080'
       MINIO_ENDPOINT: minio:9000
       MINIO_PUBLIC_ENDPOINT: http://localhost:9000
-      MINIO_ACCESS_KEY_ID: minioadmin
-      MINIO_SECRET_ACCESS_KEY: minioadmin
+      MINIO_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?请在 .env 中设置 MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: resumes
       MINIO_USE_SSL: 'false'
-      INTERNAL_API_SECRET: your-random-string
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?请在 .env 中设置 INTERNAL_API_SECRET}
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
       JWT_ACCESS_TOKEN_TTL: ${JWT_ACCESS_TOKEN_TTL}
@@ -159,11 +159,11 @@ services:
       REDIS_PORT: 6379
       MINIO_ENDPOINT: minio:9000
       MINIO_PUBLIC_ENDPOINT: http://localhost:9000
-      MINIO_ACCESS_KEY_ID: minioadmin
-      MINIO_SECRET_ACCESS_KEY: minioadmin
+      MINIO_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?请在 .env 中设置 MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: resumes
       MINIO_USE_SSL: 'false'
-      INTERNAL_API_SECRET: your-random-string
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?请在 .env 中设置 INTERNAL_API_SECRET}
     volumes:
       - ./backend:/app
     command: air -c .air.worker.toml
@@ -230,9 +230,9 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_AUTH_ANONYMOUS_ENABLED=false
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?请在 .env 中设置 GRAFANA_PASSWORD}
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
     depends_on:
       loki:
         condition: service_healthy
