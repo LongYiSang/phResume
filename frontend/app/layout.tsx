@@ -4,6 +4,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
 import Providers from "./providers";
+import { ChangePasswordGate } from "@/components/ChangePasswordGate";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -147,7 +148,10 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${quicksand.variable} ${nunito.variable} ${openSans.variable} ${robotoMono.variable} ${notoSansSC.variable} ${wenQuanYiZenHei.variable} antialiased`}
       >
         <AuthProvider>
-          <Providers>{children}</Providers>
+          <Providers>
+            {children}
+            <ChangePasswordGate />
+          </Providers>
         </AuthProvider>
       </body>
     </html>

@@ -12,7 +12,7 @@ import { TiltCard } from "@/components/landing/TiltCard";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { setAccessToken } = useAuth();
+  const { setAccessToken, setMustChangePassword } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -59,11 +59,13 @@ export default function LoginPage() {
         return;
       }
 
-      const { access_token: accessToken } = (await response.json()) as {
+      const { access_token: accessToken, must_change_password: mustChange } = (await response.json()) as {
         access_token: string;
+        must_change_password?: boolean;
       };
 
       setAccessToken(accessToken);
+      setMustChangePassword(Boolean(mustChange));
       
       // Start exit animation
       setIsExiting(true);

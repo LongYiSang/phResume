@@ -1735,7 +1735,6 @@ export default function Home() {
               selectedItemBackgroundOpacity={selectedItemBackgroundOpacity}
               onBackgroundColorChange={handleItemBackgroundColorChange}
               onBackgroundOpacityChange={handleItemBackgroundOpacityChange}
-              onDividerThicknessChange={handleDividerThicknessChange}
               onBorderRadiusChange={handleBorderRadiusChange}
               onImageZoomChange={handleImageZoomChange}
               onImageFocusChange={handleImageFocusChange}

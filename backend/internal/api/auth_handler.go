@@ -104,6 +104,13 @@ type loginRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
+type tokenResponse struct {
+	AccessToken        string `json:"access_token"`
+	TokenType          string `json:"token_type"`
+	ExpiresIn          int    `json:"expires_in"`
+	MustChangePassword bool   `json:"must_change_password"`
+}
+
 // Login 校验口令并返回 Token。
 func (h *AuthHandler) Login(c *gin.Context) {
 	ip := c.ClientIP()
@@ -159,20 +166,15 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// 登录成功：清理失败计数
 	_ = h.redis.Del(ctx, "lock:login:fail:"+strings.ToLower(req.Username)).Err()
 
-	tokenPair, err := h.authService.GenerateTokenPair(user.ID)
+	mustChangePassword := user.MustChangePassword
+	tokenPair, err := h.authService.GenerateTokenPair(user.ID, mustChangePassword)
 	if err != nil {
 		logger.Error("generate token pair failed", slog.Any("error", err))
 		Internal(c, "internal error")
 		return
 	}
 
-	h.setRefreshCookie(c, tokenPair.RefreshToken)
-
-	c.JSON(http.StatusOK, gin.H{
-		"access_token": tokenPair.AccessToken,
-		"token_type":   "Bearer",
-		"expires_in":   int(h.authService.AccessTokenTTL().Seconds()),
-	})
+	h.replyWithTokenPair(c, tokenPair, mustChangePassword)
 }
 
 type refreshRequest struct {
@@ -219,7 +221,15 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		return
 	}
 
-	tokenPair, err := h.authService.GenerateTokenPair(claims.UserID)
+	var user database.User
+	if err := h.db.WithContext(ctx).First(&user, claims.UserID).Error; err != nil {
+		logger.Info("refresh user not found", slog.Any("error", err))
+		Unauthorized(c)
+		return
+	}
+
+	mustChangePassword := user.MustChangePassword
+	tokenPair, err := h.authService.GenerateTokenPair(claims.UserID, mustChangePassword)
 	if err != nil {
 		logger.Error("refresh generate token pair failed", slog.Any("error", err))
 		Internal(c, "internal error")
@@ -233,12 +243,98 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		return
 	}
 
-	h.setRefreshCookie(c, tokenPair.RefreshToken)
+	h.replyWithTokenPair(c, tokenPair, mustChangePassword)
+}
 
-	c.JSON(http.StatusOK, gin.H{
-		"access_token": tokenPair.AccessToken,
-		"token_type":   "Bearer",
-		"expires_in":   int(h.authService.AccessTokenTTL().Seconds()),
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password" binding:"required,min=8,max=72"`
+	NewPassword     string `json:"new_password" binding:"required,min=8,max=72"`
+	ConfirmPassword string `json:"confirm_password" binding:"required,min=8,max=72"`
+}
+
+// ChangePassword 校验当前密码并更新为新密码。
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	var req changePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		BadRequest(c, err.Error())
+		return
+	}
+	if req.NewPassword != req.ConfirmPassword {
+		BadRequest(c, "password confirmation does not match")
+		return
+	}
+
+	userID, ok := userIDFromContext(c)
+	if !ok {
+		AbortUnauthorized(c)
+		return
+	}
+
+	ctx := c.Request.Context()
+	logger := h.loggerFromContext(c).With(slog.Uint64("user_id", uint64(userID)))
+
+	var user database.User
+	if err := h.db.WithContext(ctx).First(&user, userID).Error; err != nil {
+		logger.Info("change password: user not found", slog.Any("error", err))
+		Unauthorized(c)
+		return
+	}
+
+	if !h.authService.CheckPasswordHash(req.CurrentPassword, user.PasswordHash) {
+		logger.Info("change password: current password mismatch")
+		Unauthorized(c)
+		return
+	}
+
+	if strings.TrimSpace(req.NewPassword) == strings.TrimSpace(req.CurrentPassword) {
+		BadRequest(c, "new password must be different from current password")
+		return
+	}
+
+	hashed, err := h.authService.HashPassword(req.NewPassword)
+	if err != nil {
+		logger.Error("change password: hash failed", slog.Any("error", err))
+		Internal(c, "internal error")
+		return
+	}
+
+	if err := h.db.WithContext(ctx).Model(&user).Updates(map[string]any{
+		"password_hash":        hashed,
+		"must_change_password": false,
+	}).Error; err != nil {
+		logger.Error("change password: update failed", slog.Any("error", err))
+		Internal(c, "internal error")
+		return
+	}
+
+	if refreshToken, err := c.Cookie(refreshTokenCookieName); err == nil && refreshToken != "" {
+		if claims, err := h.authService.ValidateToken(refreshToken); err == nil && claims.TokenType == "refresh" && claims.ID != "" {
+			key := refreshTokenBlacklistKeyPrefix + claims.ID
+			if err := h.revokeRefreshToken(ctx, key, claims.ExpiresAt); err != nil {
+				logger.Error("change password: revoke refresh failed", slog.Any("error", err))
+				Internal(c, "internal error")
+				return
+			}
+		}
+	}
+
+	tokenPair, err := h.authService.GenerateTokenPair(user.ID, false)
+	if err != nil {
+		logger.Error("change password: generate token pair failed", slog.Any("error", err))
+		Internal(c, "internal error")
+		return
+	}
+
+	h.replyWithTokenPair(c, tokenPair, false)
+}
+
+func (h *AuthHandler) replyWithTokenPair(c *gin.Context, tokenPair auth.TokenPair, mustChangePassword bool) {
+	h.setRefreshCookie(c, tokenPair.RefreshToken)
+	c.JSON(http.StatusOK, tokenResponse{
+		AccessToken:        tokenPair.AccessToken,
+		TokenType:          "Bearer",
+		ExpiresIn:          int(h.authService.AccessTokenTTL().Seconds()),
+		MustChangePassword: mustChangePassword,
 	})
 }
 

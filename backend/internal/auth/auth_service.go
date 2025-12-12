@@ -9,7 +9,6 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // AuthService 负责处理密码哈希、JWT 生成与校验。
@@ -28,8 +27,9 @@ type TokenPair struct {
 
 // TokenClaims 表示 JWT 中的业务字段，便于中间件读取用户信息。
 type TokenClaims struct {
-	UserID    uint   `json:"user_id"`
-	TokenType string `json:"token_type"`
+	UserID             uint   `json:"user_id"`
+	TokenType          string `json:"token_type"`
+	MustChangePassword bool   `json:"must_change_password,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -61,25 +61,22 @@ func NewAuthService(privateKeyPEM, publicKeyPEM []byte, accessTTL, refreshTTL ti
 
 // HashPassword 使用 bcrypt 生成密码哈希。
 func (s *AuthService) HashPassword(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return "", fmt.Errorf("hash password: %w", err)
-	}
-	return string(bytes), nil
+	return HashPassword(password)
 }
 
 // CheckPasswordHash 校验密码是否匹配哈希。
 func (s *AuthService) CheckPasswordHash(password, hash string) bool {
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+	return CheckPasswordHash(password, hash)
 }
 
 // GenerateTokenPair 创建访问令牌与刷新令牌。
-func (s *AuthService) GenerateTokenPair(userID uint) (TokenPair, error) {
+func (s *AuthService) GenerateTokenPair(userID uint, mustChangePassword bool) (TokenPair, error) {
 	now := time.Now()
 
 	accessClaims := TokenClaims{
-		UserID:    userID,
-		TokenType: "access",
+		UserID:             userID,
+		TokenType:          "access",
+		MustChangePassword: mustChangePassword,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   strconv.FormatUint(uint64(userID), 10),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -87,8 +84,9 @@ func (s *AuthService) GenerateTokenPair(userID uint) (TokenPair, error) {
 		},
 	}
 	refreshClaims := TokenClaims{
-		UserID:    userID,
-		TokenType: "refresh",
+		UserID:             userID,
+		TokenType:          "refresh",
+		MustChangePassword: mustChangePassword,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   strconv.FormatUint(uint64(userID), 10),
 			ID:        uuid.NewString(),

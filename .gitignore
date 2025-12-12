@@ -44,3 +44,5 @@ tmp/
 /.promptx
 /tests
 
+/backend/.gocache/
+/backend/.gomodcache/

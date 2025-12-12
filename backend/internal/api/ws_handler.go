@@ -163,6 +163,12 @@ func (h *WsHandler) readLoop(
 				cancel()
 				return
 			}
+			if claims.MustChangePassword {
+				writeClose(conn, websocket.ClosePolicyViolation, "password change required")
+				errCh <- fmt.Errorf("password change required")
+				cancel()
+				return
+			}
 
 			authenticated = true
 			userIDCh <- claims.UserID

@@ -14,6 +14,8 @@ import {
 type AuthContextValue = {
   accessToken: string | null;
   setAccessToken: (token: string | null) => void;
+  mustChangePassword: boolean;
+  setMustChangePassword: (value: boolean) => void;
   isAuthenticated: boolean;
   isCheckingAuth: boolean;
   refreshAccessToken: () => Promise<string | null>;
@@ -27,6 +29,7 @@ type AuthProviderProps = {
 
 export function AuthProvider({ children }: AuthProviderProps) {
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const isMountedRef = useRef(true);
   const refreshPromiseRef = useRef<Promise<string | null> | null>(null);
@@ -46,16 +49,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
         if (!response.ok) {
           setAccessToken(null);
+          setMustChangePassword(false);
           return null;
         }
 
-        const data = (await response.json()) as { access_token?: string };
+        const data = (await response.json()) as {
+          access_token?: string;
+          must_change_password?: boolean;
+        };
         const token =
           typeof data?.access_token === "string" ? data.access_token : null;
         setAccessToken(token);
+        setMustChangePassword(Boolean(data?.must_change_password));
         return token;
       } catch {
         setAccessToken(null);
+        setMustChangePassword(false);
         return null;
       } finally {
         if (isMountedRef.current) {
@@ -79,11 +88,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
     () => ({
       accessToken,
       setAccessToken,
+      mustChangePassword,
+      setMustChangePassword,
       isAuthenticated: accessToken !== null,
       isCheckingAuth,
       refreshAccessToken,
     }),
-    [accessToken, isCheckingAuth, refreshAccessToken],
+    [accessToken, mustChangePassword, isCheckingAuth, refreshAccessToken],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

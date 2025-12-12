@@ -71,13 +71,14 @@ func RegisterRoutes(
 			authGroup.POST("/login", authHandler.Login)
 			authGroup.POST("/refresh", authHandler.Refresh)
 			authGroup.POST("/logout", authMiddleware, authHandler.Logout)
+			authGroup.POST("/change-password", authMiddleware, authHandler.ChangePassword)
 		}
 
 		v1.GET("/resume/print/:id", middleware.InternalSecretMiddleware(resumeHandler.internalSecret), resumeHandler.GetPrintResumeData)
 		v1.GET("/templates/print/:id", middleware.InternalSecretMiddleware(templateHandler.internalSecret), templateHandler.GetPrintTemplateData)
 
 		resumeGroup := v1.Group("/resume")
-		resumeGroup.Use(authMiddleware)
+		resumeGroup.Use(authMiddleware, middleware.RequirePasswordChangeCompletedMiddleware())
 		{
 			resumeGroup.GET("", resumeHandler.ListResumes)
 			resumeGroup.GET("/latest", resumeHandler.GetLatestResume)
@@ -90,7 +91,7 @@ func RegisterRoutes(
 		}
 
 		assetGroup := v1.Group("/assets")
-		assetGroup.Use(authMiddleware)
+		assetGroup.Use(authMiddleware, middleware.RequirePasswordChangeCompletedMiddleware())
 		{
 			assetGroup.GET("", assetHandler.ListAssets)
 			assetGroup.POST("/upload", assetHandler.UploadAsset)
@@ -98,7 +99,7 @@ func RegisterRoutes(
 		}
 
 		templatesGroup := v1.Group("/templates")
-		templatesGroup.Use(authMiddleware)
+		templatesGroup.Use(authMiddleware, middleware.RequirePasswordChangeCompletedMiddleware())
 		{
 			templatesGroup.GET("", templateHandler.ListTemplates)
 			templatesGroup.GET("/:id", templateHandler.GetTemplate)

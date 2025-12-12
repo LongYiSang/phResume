@@ -2,6 +2,8 @@
 
 import { Type, Image as ImageIcon, Minus, LayoutTemplate, FolderOpen, Settings, User, Heading, Check } from "lucide-react";
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
+import { useState } from "react";
+import { ChangePasswordModal } from "@/components/ChangePasswordModal";
 
 type DockProps = {
   onAddText: () => void;
@@ -233,6 +235,8 @@ function DockGhostButton({
 }
 
 function DockUserButton({ onLogout }: { onLogout?: () => void }) {
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+
   return (
     <div className="group relative flex flex-col items-center justify-center w-14 h-14 mx-auto">
       {/* 主按钮 */}
@@ -255,6 +259,13 @@ function DockUserButton({ onLogout }: { onLogout?: () => void }) {
           >
             个人中心
           </button>
+          <button
+            type="button"
+            className="w-full text-left px-3 py-2 text-sm font-medium text-kawaii-text/80 hover:bg-kawaii-pinkLight/30 hover:text-kawaii-purple rounded-lg transition-colors"
+            onClick={() => setIsChangePasswordOpen(true)}
+          >
+            修改密码
+          </button>
           <div className="h-px bg-kawaii-text/5 w-full my-0.5" />
           <button
             type="button"
@@ -267,7 +278,13 @@ function DockUserButton({ onLogout }: { onLogout?: () => void }) {
         {/* 连接桥，防止鼠标从按钮移到菜单时消失 */}
         <div className="absolute right-full top-0 h-full w-3" />
       </div>
+
+      <ChangePasswordModal
+        isOpen={isChangePasswordOpen}
+        canClose
+        onClose={() => setIsChangePasswordOpen(false)}
+        onSuccess={() => setIsChangePasswordOpen(false)}
+      />
     </div>
   );
 }
-

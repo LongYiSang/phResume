@@ -41,6 +41,7 @@ func AuthMiddleware(authService *auth.AuthService) gin.HandlerFunc {
 		}
 
 		c.Set("userID", claims.UserID)
+		c.Set("mustChangePassword", claims.MustChangePassword)
 		c.Next()
 	}
 }

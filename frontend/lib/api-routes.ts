@@ -19,6 +19,7 @@ export const API_ROUTES = {
     login: () => joinUrl(API_BASE, `${API_ROOT}/auth/login`),
     refresh: () => joinUrl(API_BASE, `${API_ROOT}/auth/refresh`),
     logout: () => joinUrl(API_BASE, `${API_ROOT}/auth/logout`),
+    changePassword: () => joinUrl(API_BASE, `${API_ROOT}/auth/change-password`),
   },
   RESUME: {
     list: () => joinUrl(API_BASE, `${API_ROOT}/resume`),

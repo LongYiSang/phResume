@@ -17,6 +17,7 @@ export interface LoginResponse {
   access_token: string;
   token_type: "Bearer";
   expires_in: number;
+  must_change_password?: boolean;
 }
 
 export interface RefreshResponse extends LoginResponse {}
@@ -96,4 +97,3 @@ export type WsEvent = {
   resume_id: number;
   url: string;
 };
-

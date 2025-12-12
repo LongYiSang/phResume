@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -13,7 +12,6 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
-	"gorm.io/gorm"
 
 	"phResume/internal/api"
 	"phResume/internal/api/middleware"
@@ -60,24 +58,6 @@ func main() {
 	storageClient, err := storage.NewClient(cfg.MinIO)
 	if err != nil {
 		log.Fatalf("init storage client: %v", err)
-	}
-
-	var seedUser database.User
-	switch err := db.First(&seedUser, 1).Error; {
-	case err == nil:
-		// seeded user already present
-	case errors.Is(err, gorm.ErrRecordNotFound):
-		hashed, hashErr := authService.HashPassword("seeded-password")
-		if hashErr != nil {
-			log.Fatalf("hash seed user password: %v", hashErr)
-		}
-		seeded := database.User{Model: gorm.Model{ID: 1}, Username: "test_user", PasswordHash: hashed}
-		if err := db.Create(&seeded).Error; err != nil {
-			log.Fatalf("seed default user: %v", err)
-		}
-		log.Printf("seeded default user with ID 1")
-	default:
-		log.Fatalf("query default user: %v", err)
 	}
 
 	address := fmt.Sprintf(":%d", cfg.API.Port)
