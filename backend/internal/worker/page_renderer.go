@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/go-rod/rod"
@@ -11,7 +12,7 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 )
 
-func renderFrontendPage(logger *slog.Logger, targetURL string) (_ *rod.Page, cleanup func(), err error) {
+func renderFrontendPage(logger *slog.Logger, targetURL string, preReadyScript string) (_ *rod.Page, cleanup func(), err error) {
 	cleanup = func() {}
 
 	logger.Info("Worker: Navigating to frontend print page...", slog.String("url", targetURL))
@@ -49,6 +50,14 @@ func renderFrontendPage(logger *slog.Logger, targetURL string) (_ *rod.Page, cle
 	}
 
 	page.MustWaitLoad()
+
+	if strings.TrimSpace(preReadyScript) != "" {
+		logger.Info("Worker: Injecting print data before render...")
+		if _, evalErr := page.Timeout(10 * time.Second).Eval(preReadyScript); evalErr != nil {
+			return nil, cleanup, fmt.Errorf("inject print data: %w", evalErr)
+		}
+	}
+
 	logger.Info("Worker: Waiting for frontend render signal (#pdf-render-ready)...")
 	page.Timeout(30 * time.Second).MustElement("#pdf-render-ready")
 

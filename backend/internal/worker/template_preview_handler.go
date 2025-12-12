@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -49,12 +48,6 @@ func (h *TemplatePreviewHandler) ProcessTask(ctx context.Context, t *asynq.Task)
 		return err
 	}
 
-	if h.internalSecret == "" {
-		err := fmt.Errorf("internal api secret missing")
-		log.Error("internal api secret missing", slog.Any("error", err))
-		return err
-	}
-
 	log = log.With(
 		slog.Int("template_id", int(payload.TemplateID)),
 		slog.String("correlation_id", payload.CorrelationID),
@@ -71,13 +64,19 @@ func (h *TemplatePreviewHandler) ProcessTask(ctx context.Context, t *asynq.Task)
 		return err
 	}
 
+	printData, err := fetchInternalPrintData(ctx, templatePrintPath, template.ID, h.internalSecret)
+	if err != nil {
+		log.Error("fetch internal print data failed", slog.Any("error", err))
+		return err
+	}
+
 	targetURL := fmt.Sprintf(
-		"http://frontend:3000/print-template/%d?internal_token=%s",
+		"http://frontend:3000/print-template/%d",
 		template.ID,
-		url.QueryEscape(h.internalSecret),
 	)
 
-	page, cleanup, err := renderFrontendPage(h.logger, targetURL)
+	injectionScript := buildPrintDataInjectionScript(printData)
+	page, cleanup, err := renderFrontendPage(h.logger, targetURL, injectionScript)
 	if err != nil {
 		log.Error("render template page failed", slog.Any("error", err))
 		return err

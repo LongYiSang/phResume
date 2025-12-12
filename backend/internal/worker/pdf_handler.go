@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"time"
 
 	"github.com/go-rod/rod"
@@ -57,12 +56,6 @@ func (h *PDFTaskHandler) ProcessTask(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	if h.internalSecret == "" {
-		err := fmt.Errorf("internal api secret missing")
-		log.Error("internal api secret missing", slog.Any("error", err))
-		return err
-	}
-
 	log = log.With(
 		slog.String("correlation_id", payload.CorrelationID),
 		slog.Int("resume_id", int(payload.ResumeID)),
@@ -79,7 +72,7 @@ func (h *PDFTaskHandler) ProcessTask(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	pdfBytes, page, cleanup, err := h.generatePDFFromFrontend(resume.ID)
+	pdfBytes, page, cleanup, err := h.generatePDFFromFrontend(ctx, resume.ID)
 	if err != nil {
 		log.Error("generate pdf via frontend failed", slog.Any("error", err))
 		return err
@@ -127,7 +120,7 @@ func (h *PDFTaskHandler) ProcessTask(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
-func (h *PDFTaskHandler) generatePDFFromFrontend(resumeID uint) (_ []byte, page *rod.Page, cleanup func(), err error) {
+func (h *PDFTaskHandler) generatePDFFromFrontend(ctx context.Context, resumeID uint) (_ []byte, page *rod.Page, cleanup func(), err error) {
 	cleanup = func() {}
 	defer func() {
 		if err != nil {
@@ -135,13 +128,18 @@ func (h *PDFTaskHandler) generatePDFFromFrontend(resumeID uint) (_ []byte, page 
 		}
 	}()
 
+	printData, err := fetchInternalPrintData(ctx, resumePrintPath, resumeID, h.internalSecret)
+	if err != nil {
+		return nil, nil, cleanup, err
+	}
+
 	targetURL := fmt.Sprintf(
-		"http://frontend:3000/print/%d?internal_token=%s",
+		"http://frontend:3000/print/%d",
 		resumeID,
-		url.QueryEscape(h.internalSecret),
 	)
 
-	page, cleanup, err = renderFrontendPage(h.logger, targetURL)
+	injectionScript := buildPrintDataInjectionScript(printData)
+	page, cleanup, err = renderFrontendPage(h.logger, targetURL, injectionScript)
 	if err != nil {
 		return nil, nil, cleanup, err
 	}

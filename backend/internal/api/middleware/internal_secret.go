@@ -14,7 +14,8 @@ func InternalSecretMiddleware(secret string) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		token := strings.TrimSpace(c.Query("internal_token"))
+		// 内部调用必须通过 Header 传递密钥，避免 query 泄露到浏览器/日志。
+		token := strings.TrimSpace(c.GetHeader("X-Internal-Secret"))
 		if token == "" || token != secret {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			c.Abort()

@@ -6,7 +6,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import { PageContainer } from "@/components/PageContainer";
 import { TextItem } from "@/components/TextItem";
 import { SectionTitleItem } from "@/components/SectionTitleItem";
@@ -26,7 +26,6 @@ const DEFAULT_LAYOUT_SETTINGS = {
   font_size_pt: 10,
   margin_px: 30,
 };
-import { API_ROUTES } from "@/lib/api-routes";
 
 import { Watermark } from "@/components/Watermark";
 
@@ -45,44 +44,38 @@ type PrintViewProps = {
   resourcePath: string;
 };
 
-export function PrintView({ resourcePath }: PrintViewProps) {
+declare global {
+  interface Window {
+    __PRINT_DATA__?: ResumeData;
+  }
+}
+
+export function PrintView({ resourcePath: _resourcePath }: PrintViewProps) {
   const params = useParams<{ id: string }>();
-  const searchParams = useSearchParams();
   const resourceId = params?.id;
-  const internalToken = searchParams?.get("internal_token") ?? "";
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isRendered, setIsRendered] = useState(false);
 
   useEffect(() => {
-    if (!resourceId || !internalToken) {
+    if (!resourceId) {
       setError("缺少必要参数");
       return;
     }
 
-    const controller = new AbortController();
+    let cancelled = false;
+    const start = Date.now();
 
-    const fetchPrintData = async () => {
-      setIsLoading(true);
-      setError(null);
-      setIsRendered(false);
+    setIsLoading(true);
+    setError(null);
+    setIsRendered(false);
 
-      try {
-        const url =
-          resourcePath === "resume/print"
-            ? API_ROUTES.PRINT.resume(resourceId!, internalToken)
-            : API_ROUTES.PRINT.template(resourceId!, internalToken);
-        const response = await fetch(url, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
+    const pollInjectedData = async () => {
+      if (cancelled) return;
 
-        if (!response.ok) {
-          throw new Error(`failed to fetch print data: ${response.status}`);
-        }
-
-        const data = (await response.json()) as ResumeData;
+      const data = typeof window !== "undefined" ? window.__PRINT_DATA__ : undefined;
+      if (data) {
         setResumeData(data);
         const fontsReady = (document as unknown as { fonts?: { ready?: Promise<void> } }).fonts?.ready;
         const timeout = new Promise<void>((resolve) => setTimeout(resolve, 3000));
@@ -91,25 +84,29 @@ export function PrintView({ resourcePath }: PrintViewProps) {
             await Promise.race([fontsReady, timeout]);
           } catch {}
         }
-        setIsRendered(true);
-      } catch (err) {
-        if (controller.signal.aborted) {
-          return;
-        }
-        console.error("加载打印数据失败", err);
-        setError("加载打印数据失败，请重试");
-        setIsRendered(false);
-      } finally {
-        if (!controller.signal.aborted) {
+        if (!cancelled) {
+          setIsRendered(true);
           setIsLoading(false);
         }
+        return;
       }
+
+      if (Date.now() - start > 5000) {
+        setError("打印数据未注入");
+        setIsLoading(false);
+        setIsRendered(false);
+        return;
+      }
+
+      setTimeout(pollInjectedData, 50);
     };
 
-    fetchPrintData();
+    pollInjectedData();
 
-    return () => controller.abort();
-  }, [resourceId, internalToken, resourcePath]);
+    return () => {
+      cancelled = true;
+    };
+  }, [resourceId]);
 
   const layoutSettings = useMemo(
     () => ({

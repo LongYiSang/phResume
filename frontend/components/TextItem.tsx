@@ -38,15 +38,15 @@ import {
   FOCUS_COMMAND,
 } from "lexical";
 import { useActiveEditor } from "@/context/ActiveEditorContext";
+import { sanitizeLexicalHtml } from "@/utils/sanitize-html";
 
 const DEFAULT_HTML = "<p></p>";
 
 function parseHtmlToNodes(editor: LexicalEditor, html: string): LexicalNode[] {
   const parser = new DOMParser();
-  const dom = parser.parseFromString(
-    html && html.length > 0 ? html : DEFAULT_HTML,
-    "text/html",
-  );
+  const normalized = html && html.length > 0 ? html : DEFAULT_HTML;
+  const safeHtml = sanitizeLexicalHtml(normalized) || DEFAULT_HTML;
+  const dom = parser.parseFromString(safeHtml, "text/html");
   const generatedNodes = $generateNodesFromDOM(editor, dom);
   if (generatedNodes.length === 0) {
     return [$createParagraphNode()];
@@ -81,19 +81,20 @@ function ExternalHtmlSyncPlugin({
   const [editor] = useLexicalComposerContext();
 
   useEffect(() => {
-    if (html === lastSyncedHtmlRef.current) {
+    const safeHtml = sanitizeLexicalHtml(html);
+    if (safeHtml === lastSyncedHtmlRef.current) {
       return;
     }
 
     editor.update(() => {
-      const nodes = parseHtmlToNodes(editor, html);
+      const nodes = parseHtmlToNodes(editor, safeHtml);
       const root = $getRoot();
       root.clear();
       nodes.forEach((node) => root.append(node));
       root.selectEnd();
     });
 
-    lastSyncedHtmlRef.current = html;
+    lastSyncedHtmlRef.current = safeHtml;
   }, [editor, html, lastSyncedHtmlRef]);
 
   return null;
@@ -137,18 +138,19 @@ function FocusTrackerPlugin() {
 }
 
 function TextItemReadOnly({ html, style }: { html: string; style?: CSSProperties }) {
+  const safeHtml = useMemo(() => sanitizeLexicalHtml(html), [html]);
   return (
     <div
       className="text-item-readonly pointer-events-none select-none"
       style={style}
-      dangerouslySetInnerHTML={{ __html: html }}
+      dangerouslySetInnerHTML={{ __html: safeHtml }}
     />
   );
 }
 
 function TextItemEditable({ html, style, onChange }: { html: string; style?: CSSProperties; onChange: (newHtml: string) => void }) {
-  const initialHtmlRef = useRef(html);
-  const lastSyncedHtmlRef = useRef(html);
+  const initialHtmlRef = useRef(sanitizeLexicalHtml(html));
+  const lastSyncedHtmlRef = useRef(sanitizeLexicalHtml(html));
   const [isFocused, setIsFocused] = useState(false);
   const initialConfig = useMemo(
     () => ({
@@ -173,11 +175,12 @@ function TextItemEditable({ html, style, onChange }: { html: string; style?: CSS
     (editorState: EditorState, editor: LexicalEditor) => {
       editorState.read(() => {
         const htmlString = $generateHtmlFromNodes(editor);
-        if (htmlString === lastSyncedHtmlRef.current) {
+        const safeHtml = sanitizeLexicalHtml(htmlString);
+        if (safeHtml === lastSyncedHtmlRef.current) {
           return;
         }
-        lastSyncedHtmlRef.current = htmlString;
-        onChange(htmlString);
+        lastSyncedHtmlRef.current = safeHtml;
+        onChange(safeHtml);
       });
     },
     [onChange],
