@@ -103,9 +103,11 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${SSH_USER}"
-          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "mkdir -p '${DEPLOY_PATH}/deploy/nginx'"
-          scp -P "${SSH_PORT}" docker-compose.prod.yml "${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/docker-compose.prod.yml"
-          scp -P "${SSH_PORT}" deploy/nginx/nginx.prod.conf "${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/deploy/nginx/nginx.prod.conf"
+          SSH_OPTS=(-i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "${SSH_PORT}")
+          SCP_OPTS=(-i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -P "${SSH_PORT}")
+          ssh "${SSH_OPTS[@]}" "${SSH_USER}@${SSH_HOST}" "mkdir -p '${DEPLOY_PATH}/deploy/nginx'"
+          scp "${SCP_OPTS[@]}" docker-compose.prod.yml "${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/docker-compose.prod.yml"
+          scp "${SCP_OPTS[@]}" deploy/nginx/nginx.prod.conf "${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/deploy/nginx/nginx.prod.conf"
 
       - name: Remote deploy
         env:
@@ -116,4 +118,5 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${SSH_USER}"
-          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "set -euo pipefail; cd '${DEPLOY_PATH}'; export GHCR_OWNER='${OWNER_LC}'; export APP_VERSION='${SHA}'; docker compose -f docker-compose.prod.yml pull; docker compose -f docker-compose.prod.yml up -d --remove-orphans"
+          SSH_OPTS=(-i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "${SSH_PORT}")
+          ssh "${SSH_OPTS[@]}" "${SSH_USER}@${SSH_HOST}" "set -euo pipefail; cd '${DEPLOY_PATH}'; export GHCR_OWNER='${OWNER_LC}'; export APP_VERSION='${SHA}'; docker compose -f docker-compose.prod.yml pull; docker compose -f docker-compose.prod.yml up -d --remove-orphans"
