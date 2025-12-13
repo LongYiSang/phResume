@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"strings"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -33,6 +34,8 @@ func NewTemplatePreviewHandler(
 	storageClient *storage.Client,
 	logger *slog.Logger,
 	internalSecret string,
+	internalAPIBaseURL string,
+	frontendBaseURL string,
 	internalAPIBaseURL string,
 	frontendBaseURL string,
 ) *TemplatePreviewHandler {

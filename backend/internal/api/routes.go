@@ -25,6 +25,7 @@ func RegisterRoutes(
 	storageClient *storage.Client,
 	internalAPISecret string,
 	clamdAddr string,
+	internalSecret string,
 	maxResumes int,
 	maxTemplates int,
 	allowedOrigins []string,

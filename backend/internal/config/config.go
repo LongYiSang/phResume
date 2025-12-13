@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -40,6 +41,11 @@ type APIConfig struct {
 	PdfRateLimitPerHour    int           `mapstructure:"pdf_rate_limit_per_hour"`
 	UploadRateLimitPerHour int           `mapstructure:"upload_rate_limit_per_hour"`
 	CookieDomain           string        `mapstructure:"cookie_domain"`
+}
+
+// InternalConfig contains internal-only secrets shared between components.
+type InternalConfig struct {
+	APISecret string `mapstructure:"api_secret"`
 }
 
 // DatabaseConfig contains connection options for PostgreSQL.
@@ -126,6 +132,9 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 
+	applyEnvAliases(&cfg)
+	normalize(&cfg)
+
 	if err := cfg.API.prepare(); err != nil {
 		return nil, fmt.Errorf("prepare api config: %w", err)
 	}
@@ -139,6 +148,34 @@ func Load() (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+func applyEnvAliases(cfg *Config) {
+	applyFirstNonEmptyEnv(&cfg.Database.Name, "POSTGRES_DB", "DB_NAME")
+	applyFirstNonEmptyEnv(&cfg.Database.User, "POSTGRES_USER", "DB_USER")
+	applyFirstNonEmptyEnv(&cfg.Database.Password, "POSTGRES_PASSWORD", "DB_PASSWORD")
+	applyFirstNonEmptyEnv(&cfg.MinIO.AccessKeyID, "MINIO_ACCESS_KEY_ID", "MINIO_ROOT_USER")
+	applyFirstNonEmptyEnv(&cfg.MinIO.SecretAccessKey, "MINIO_SECRET_ACCESS_KEY", "MINIO_ROOT_PASSWORD")
+}
+
+func applyFirstNonEmptyEnv(target *string, envs ...string) {
+	for _, env := range envs {
+		if val := strings.TrimSpace(os.Getenv(env)); val != "" {
+			*target = val
+			return
+		}
+	}
+}
+
+func normalize(cfg *Config) {
+	cfg.Internal.APISecret = strings.TrimSpace(cfg.Internal.APISecret)
+	cfg.Worker.InternalAPIBaseURL = normalizeBaseURL(cfg.Worker.InternalAPIBaseURL)
+	cfg.Worker.FrontendBaseURL = normalizeBaseURL(cfg.Worker.FrontendBaseURL)
+	cfg.Worker.MetricsAddr = strings.TrimSpace(cfg.Worker.MetricsAddr)
+}
+
+func normalizeBaseURL(value string) string {
+	return strings.TrimRight(strings.TrimSpace(value), "/")
 }
 
 // MustLoad wraps Load and panics on failure.
@@ -182,6 +219,10 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("jwt.refresh_token_ttl", "168h")
 	v.SetDefault("clamav.host", "clamav")
 	v.SetDefault("clamav.port", "3310")
+	v.SetDefault("worker.internal_api_base_url", "http://api:8080")
+	v.SetDefault("worker.frontend_base_url", "http://frontend:3000")
+	v.SetDefault("worker.metrics_addr", ":9100")
+	v.SetDefault("worker.concurrency", 10)
 	v.SetDefault("worker.internal_api_base_url", "http://api:8080")
 	v.SetDefault("worker.frontend_base_url", "http://frontend:3000")
 	v.SetDefault("worker.metrics_addr", ":9100")
@@ -352,6 +393,18 @@ func validate(cfg Config) error {
 	}
 	if cfg.JWT.RefreshTokenTTL <= 0 {
 		return errors.New("jwt refresh token ttl must be positive")
+	}
+	if strings.TrimSpace(cfg.Worker.InternalAPIBaseURL) == "" {
+		return errors.New("worker internal api base url is required")
+	}
+	if strings.TrimSpace(cfg.Worker.FrontendBaseURL) == "" {
+		return errors.New("worker frontend base url is required")
+	}
+	if strings.TrimSpace(cfg.Worker.MetricsAddr) == "" {
+		return errors.New("worker metrics addr is required")
+	}
+	if cfg.Worker.Concurrency <= 0 {
+		return errors.New("worker concurrency must be positive")
 	}
 	return nil
 }

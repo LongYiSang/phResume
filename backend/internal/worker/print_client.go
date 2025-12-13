@@ -18,6 +18,7 @@ const (
 // fetchInternalPrintData 从后端内部打印接口拉取 JSON 数据。
 // 只允许 Worker 通过 Header 携带 INTERNAL_API_SECRET 访问。
 func fetchInternalPrintData(ctx context.Context, internalAPIBaseURL string, resourcePath string, id uint, secret string) ([]byte, error) {
+func fetchInternalPrintData(ctx context.Context, internalAPIBaseURL string, resourcePath string, id uint, secret string) ([]byte, error) {
 	secret = strings.TrimSpace(secret)
 	if secret == "" {
 		return nil, fmt.Errorf("internal api secret missing")

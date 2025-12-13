@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"strings"
 	"time"
 
 	"github.com/go-rod/rod"
@@ -39,6 +40,8 @@ func NewPDFTaskHandler(
 	redisClient *redis.Client,
 	logger *slog.Logger,
 	internalSecret string,
+	internalAPIBaseURL string,
+	frontendBaseURL string,
 	internalAPIBaseURL string,
 	frontendBaseURL string,
 ) *PDFTaskHandler {

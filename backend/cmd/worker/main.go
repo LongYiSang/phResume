@@ -58,12 +58,15 @@ func main() {
 	redisOpt := asynq.RedisClientOpt{Addr: redisAddr}
 	server := asynq.NewServer(redisOpt, asynq.Config{
 		Concurrency: cfg.Worker.Concurrency,
+		Concurrency: cfg.Worker.Concurrency,
 	})
 
 	go func() {
 		metricsMux := http.NewServeMux()
 		metricsMux.Handle("/metrics", promhttp.Handler())
 
+		logger.Info("worker metrics server started", slog.String("addr", cfg.Worker.MetricsAddr))
+		if err := http.ListenAndServe(cfg.Worker.MetricsAddr, metricsMux); err != nil {
 		logger.Info("worker metrics server started", slog.String("addr", cfg.Worker.MetricsAddr))
 		if err := http.ListenAndServe(cfg.Worker.MetricsAddr, metricsMux); err != nil {
 			log.Fatalf("could not start worker metrics server: %v", err)
