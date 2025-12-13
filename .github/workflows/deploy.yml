@@ -15,8 +15,6 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  # GHCR 镜像命名要求仓库路径全小写；GitHub 用户名/组织名可能包含大写，需要转小写。
-  OWNER: ${{ toLower(github.repository_owner) }}
   SHA: ${{ github.sha }}
   DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/opt/phresume' }}
 
@@ -27,6 +25,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: docker/setup-buildx-action@v3
+
+      - name: Lowercase owner for GHCR
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY%%/*}"
+          echo "OWNER_LC=${owner,,}" >> "${GITHUB_ENV}"
 
       - uses: docker/login-action@v3
         with:
@@ -41,8 +45,8 @@ jobs:
           file: ./backend/Dockerfile.api.prod
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.OWNER }}/phresume-api:${{ env.SHA }}
-            ${{ env.REGISTRY }}/${{ env.OWNER }}/phresume-api:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/phresume-api:${{ env.SHA }}
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/phresume-api:latest
 
       - name: Build & push worker
         uses: docker/build-push-action@v6
@@ -51,8 +55,8 @@ jobs:
           file: ./backend/Dockerfile.worker.prod
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.OWNER }}/phresume-worker:${{ env.SHA }}
-            ${{ env.REGISTRY }}/${{ env.OWNER }}/phresume-worker:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/phresume-worker:${{ env.SHA }}
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/phresume-worker:latest
 
       - name: Build & push frontend
         uses: docker/build-push-action@v6
@@ -61,14 +65,20 @@ jobs:
           file: ./frontend/Dockerfile.prod
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.OWNER }}/phresume-frontend:${{ env.SHA }}
-            ${{ env.REGISTRY }}/${{ env.OWNER }}/phresume-frontend:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/phresume-frontend:${{ env.SHA }}
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/phresume-frontend:latest
 
   deploy:
     runs-on: ubuntu-latest
     needs: [build-and-push]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Lowercase owner for GHCR
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY%%/*}"
+          echo "OWNER_LC=${owner,,}" >> "${GITHUB_ENV}"
 
       - name: Prepare SSH
         env:
@@ -106,4 +116,4 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${SSH_USER}"
-          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "set -euo pipefail; cd '${DEPLOY_PATH}'; export GHCR_OWNER='${OWNER}'; export APP_VERSION='${SHA}'; docker compose -f docker-compose.prod.yml pull; docker compose -f docker-compose.prod.yml up -d --remove-orphans"
+          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "set -euo pipefail; cd '${DEPLOY_PATH}'; export GHCR_OWNER='${OWNER_LC}'; export APP_VERSION='${SHA}'; docker compose -f docker-compose.prod.yml pull; docker compose -f docker-compose.prod.yml up -d --remove-orphans"
