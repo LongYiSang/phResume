@@ -168,7 +168,7 @@ func applyFirstNonEmptyEnv(target *string, envs ...string) {
 }
 
 func normalize(cfg *Config) {
-	cfg.Internal.APISecret = strings.TrimSpace(cfg.Internal.APISecret)
+	cfg.InternalAPISecret = strings.TrimSpace(cfg.InternalAPISecret)
 	cfg.Worker.InternalAPIBaseURL = normalizeBaseURL(cfg.Worker.InternalAPIBaseURL)
 	cfg.Worker.FrontendBaseURL = normalizeBaseURL(cfg.Worker.FrontendBaseURL)
 	cfg.Worker.MetricsAddr = strings.TrimSpace(cfg.Worker.MetricsAddr)
