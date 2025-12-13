@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -18,6 +19,8 @@ type Config struct {
 	MinIO    MinIOConfig    `mapstructure:"minio"`
 	JWT      JWTConfig      `mapstructure:"jwt"`
 	ClamAV   ClamAVConfig   `mapstructure:"clamav"`
+	Internal InternalConfig `mapstructure:"internal"`
+	Worker   WorkerConfig   `mapstructure:"worker"`
 }
 
 // APIConfig contains HTTP server settings.
@@ -37,6 +40,11 @@ type APIConfig struct {
 	PdfRateLimitPerHour    int           `mapstructure:"pdf_rate_limit_per_hour"`
 	UploadRateLimitPerHour int           `mapstructure:"upload_rate_limit_per_hour"`
 	CookieDomain           string        `mapstructure:"cookie_domain"`
+}
+
+// InternalConfig contains internal-only secrets shared between components.
+type InternalConfig struct {
+	APISecret string `mapstructure:"api_secret"`
 }
 
 // DatabaseConfig contains connection options for PostgreSQL.
@@ -69,6 +77,14 @@ type MinIOConfig struct {
 type ClamAVConfig struct {
 	Host string `mapstructure:"host"`
 	Port string `mapstructure:"port"`
+}
+
+// WorkerConfig contains Asynq worker runtime settings.
+type WorkerConfig struct {
+	InternalAPIBaseURL string `mapstructure:"internal_api_base_url"`
+	FrontendBaseURL    string `mapstructure:"frontend_base_url"`
+	MetricsAddr        string `mapstructure:"metrics_addr"`
+	Concurrency        int    `mapstructure:"concurrency"`
 }
 
 // JWTConfig 包含 JWT 密钥与时效配置。
@@ -112,6 +128,9 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 
+	applyEnvAliases(&cfg)
+	normalize(&cfg)
+
 	if err := cfg.API.prepare(); err != nil {
 		return nil, fmt.Errorf("prepare api config: %w", err)
 	}
@@ -125,6 +144,34 @@ func Load() (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+func applyEnvAliases(cfg *Config) {
+	applyFirstNonEmptyEnv(&cfg.Database.Name, "POSTGRES_DB", "DB_NAME")
+	applyFirstNonEmptyEnv(&cfg.Database.User, "POSTGRES_USER", "DB_USER")
+	applyFirstNonEmptyEnv(&cfg.Database.Password, "POSTGRES_PASSWORD", "DB_PASSWORD")
+	applyFirstNonEmptyEnv(&cfg.MinIO.AccessKeyID, "MINIO_ACCESS_KEY_ID", "MINIO_ROOT_USER")
+	applyFirstNonEmptyEnv(&cfg.MinIO.SecretAccessKey, "MINIO_SECRET_ACCESS_KEY", "MINIO_ROOT_PASSWORD")
+}
+
+func applyFirstNonEmptyEnv(target *string, envs ...string) {
+	for _, env := range envs {
+		if val := strings.TrimSpace(os.Getenv(env)); val != "" {
+			*target = val
+			return
+		}
+	}
+}
+
+func normalize(cfg *Config) {
+	cfg.Internal.APISecret = strings.TrimSpace(cfg.Internal.APISecret)
+	cfg.Worker.InternalAPIBaseURL = normalizeBaseURL(cfg.Worker.InternalAPIBaseURL)
+	cfg.Worker.FrontendBaseURL = normalizeBaseURL(cfg.Worker.FrontendBaseURL)
+	cfg.Worker.MetricsAddr = strings.TrimSpace(cfg.Worker.MetricsAddr)
+}
+
+func normalizeBaseURL(value string) string {
+	return strings.TrimRight(strings.TrimSpace(value), "/")
 }
 
 // MustLoad wraps Load and panics on failure.
@@ -165,47 +212,57 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("jwt.refresh_token_ttl", "168h")
 	v.SetDefault("clamav.host", "clamav")
 	v.SetDefault("clamav.port", "3310")
+	v.SetDefault("worker.internal_api_base_url", "http://api:8080")
+	v.SetDefault("worker.frontend_base_url", "http://frontend:3000")
+	v.SetDefault("worker.metrics_addr", ":9100")
+	v.SetDefault("worker.concurrency", 10)
 }
 
 func bindEnv(v *viper.Viper) error {
-	mappings := map[string]string{
-		"api.port":                       "API_PORT",
-		"api.max_resumes":                "API_MAX_RESUMES",
-		"api.max_templates":              "API_MAX_TEMPLATES",
-		"api.login_rate_limit_per_hour":  "API_LOGIN_RATE_LIMIT_PER_HOUR",
-		"api.login_lock_threshold":       "API_LOGIN_LOCK_THRESHOLD",
-		"api.login_lock_ttl":             "API_LOGIN_LOCK_TTL",
-		"api.allowed_origins":            "API_ALLOWED_ORIGINS",
-		"api.upload_max_bytes":           "API_UPLOAD_MAX_BYTES",
-		"api.upload_mime_whitelist":      "API_UPLOAD_MIME_WHITELIST",
-		"api.pdf_rate_limit_per_hour":    "API_PDF_RATE_LIMIT_PER_HOUR",
-		"api.upload_rate_limit_per_hour": "API_UPLOAD_RATE_LIMIT_PER_HOUR",
-		"api.cookie_domain":              "API_COOKIE_DOMAIN",
-		"database.host":                  "DATABASE_HOST",
-		"database.port":                  "DATABASE_PORT",
-		"database.name":                  "POSTGRES_DB",
-		"database.user":                  "POSTGRES_USER",
-		"database.password":              "POSTGRES_PASSWORD",
-		"database.sslmode":               "DATABASE_SSLMODE",
-		"redis.host":                     "REDIS_HOST",
-		"redis.port":                     "REDIS_PORT",
-		"minio.endpoint":                 "MINIO_ENDPOINT",
-		"minio.access_key_id":            "MINIO_ACCESS_KEY_ID",
-		"minio.secret_access_key":        "MINIO_SECRET_ACCESS_KEY",
-		"minio.use_ssl":                  "MINIO_USE_SSL",
-		"minio.bucket":                   "MINIO_BUCKET",
-		"minio.public_endpoint":          "MINIO_PUBLIC_ENDPOINT",
-		"jwt.private_key":                "JWT_PRIVATE_KEY",
-		"jwt.public_key":                 "JWT_PUBLIC_KEY",
-		"jwt.access_token_ttl":           "JWT_ACCESS_TOKEN_TTL",
-		"jwt.refresh_token_ttl":          "JWT_REFRESH_TOKEN_TTL",
-		"clamav.host":                    "CLAMAV_HOST",
-		"clamav.port":                    "CLAMAV_PORT",
+	mappings := map[string][]string{
+		"api.port":                       {"API_PORT"},
+		"api.max_resumes":                {"API_MAX_RESUMES"},
+		"api.max_templates":              {"API_MAX_TEMPLATES"},
+		"api.login_rate_limit_per_hour":  {"API_LOGIN_RATE_LIMIT_PER_HOUR"},
+		"api.login_lock_threshold":       {"API_LOGIN_LOCK_THRESHOLD"},
+		"api.login_lock_ttl":             {"API_LOGIN_LOCK_TTL"},
+		"api.allowed_origins":            {"API_ALLOWED_ORIGINS"},
+		"api.upload_max_bytes":           {"API_UPLOAD_MAX_BYTES"},
+		"api.upload_mime_whitelist":      {"API_UPLOAD_MIME_WHITELIST"},
+		"api.pdf_rate_limit_per_hour":    {"API_PDF_RATE_LIMIT_PER_HOUR"},
+		"api.upload_rate_limit_per_hour": {"API_UPLOAD_RATE_LIMIT_PER_HOUR"},
+		"api.cookie_domain":              {"API_COOKIE_DOMAIN"},
+		"database.host":                  {"DATABASE_HOST"},
+		"database.port":                  {"DATABASE_PORT"},
+		"database.name":                  {"POSTGRES_DB", "DB_NAME"},
+		"database.user":                  {"POSTGRES_USER", "DB_USER"},
+		"database.password":              {"POSTGRES_PASSWORD", "DB_PASSWORD"},
+		"database.sslmode":               {"DATABASE_SSLMODE"},
+		"redis.host":                     {"REDIS_HOST"},
+		"redis.port":                     {"REDIS_PORT"},
+		"minio.endpoint":                 {"MINIO_ENDPOINT"},
+		"minio.access_key_id":            {"MINIO_ACCESS_KEY_ID", "MINIO_ROOT_USER"},
+		"minio.secret_access_key":        {"MINIO_SECRET_ACCESS_KEY", "MINIO_ROOT_PASSWORD"},
+		"minio.use_ssl":                  {"MINIO_USE_SSL"},
+		"minio.bucket":                   {"MINIO_BUCKET"},
+		"minio.public_endpoint":          {"MINIO_PUBLIC_ENDPOINT"},
+		"jwt.private_key":                {"JWT_PRIVATE_KEY"},
+		"jwt.public_key":                 {"JWT_PUBLIC_KEY"},
+		"jwt.access_token_ttl":           {"JWT_ACCESS_TOKEN_TTL"},
+		"jwt.refresh_token_ttl":          {"JWT_REFRESH_TOKEN_TTL"},
+		"clamav.host":                    {"CLAMAV_HOST"},
+		"clamav.port":                    {"CLAMAV_PORT"},
+		"internal.api_secret":            {"INTERNAL_API_SECRET"},
+		"worker.internal_api_base_url":   {"WORKER_INTERNAL_API_BASE_URL"},
+		"worker.frontend_base_url":       {"WORKER_FRONTEND_BASE_URL"},
+		"worker.metrics_addr":            {"WORKER_METRICS_ADDR"},
+		"worker.concurrency":             {"WORKER_CONCURRENCY"},
 	}
 
-	for key, env := range mappings {
-		if err := v.BindEnv(key, env); err != nil {
-			return fmt.Errorf("bind %s to %s: %w", key, env, err)
+	for key, envs := range mappings {
+		args := append([]string{key}, envs...)
+		if err := v.BindEnv(args...); err != nil {
+			return fmt.Errorf("bind %s to %v: %w", key, envs, err)
 		}
 	}
 
@@ -288,6 +345,9 @@ func validate(cfg Config) error {
 	if cfg.ClamAV.Port == "" {
 		return errors.New("clamav port is required")
 	}
+	if strings.TrimSpace(cfg.Internal.APISecret) == "" {
+		return errors.New("internal api secret is required")
+	}
 	if len(cfg.JWT.PrivateKeyPEM) == 0 {
 		return errors.New("jwt private key is required")
 	}
@@ -299,6 +359,18 @@ func validate(cfg Config) error {
 	}
 	if cfg.JWT.RefreshTokenTTL <= 0 {
 		return errors.New("jwt refresh token ttl must be positive")
+	}
+	if strings.TrimSpace(cfg.Worker.InternalAPIBaseURL) == "" {
+		return errors.New("worker internal api base url is required")
+	}
+	if strings.TrimSpace(cfg.Worker.FrontendBaseURL) == "" {
+		return errors.New("worker frontend base url is required")
+	}
+	if strings.TrimSpace(cfg.Worker.MetricsAddr) == "" {
+		return errors.New("worker metrics addr is required")
+	}
+	if cfg.Worker.Concurrency <= 0 {
+		return errors.New("worker concurrency must be positive")
 	}
 	return nil
 }
