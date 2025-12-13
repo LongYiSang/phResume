@@ -1,6 +1,5 @@
 import { Button, Slider } from "@heroui/react";
 import { X } from "lucide-react";
-import { useEffect, useState } from "react";
 import type { LayoutSettings } from "@/types/resume";
 
 type SettingsPanelProps = {
@@ -16,20 +15,12 @@ export function SettingsPanel({
   layoutSettings,
   onSettingsChange,
 }: SettingsPanelProps) {
-  const [margin, setMargin] = useState(36); // Default 1.0cm ≈ 36px
-
-  useEffect(() => {
-    if (layoutSettings?.margin_px !== undefined) {
-      setMargin(layoutSettings.margin_px);
-    }
-  }, [layoutSettings]);
+  const margin = layoutSettings?.margin_px ?? 36; // Default 1.0cm ≈ 36px
 
   if (!isOpen) return null;
 
   const handleMarginChange = (value: number | number[]) => {
     const newVal = Array.isArray(value) ? value[0] : value;
-    setMargin(newVal);
-    
     if (layoutSettings) {
       onSettingsChange({
         ...layoutSettings,

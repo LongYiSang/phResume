@@ -57,26 +57,38 @@ func main() {
 
 	redisOpt := asynq.RedisClientOpt{Addr: redisAddr}
 	server := asynq.NewServer(redisOpt, asynq.Config{
-		Concurrency: 10,
+		Concurrency: cfg.Worker.Concurrency,
 	})
 
 	go func() {
 		metricsMux := http.NewServeMux()
 		metricsMux.Handle("/metrics", promhttp.Handler())
 
-		logger.Info("worker metrics server started", slog.String("addr", ":9100"))
-		if err := http.ListenAndServe(":9100", metricsMux); err != nil {
+		logger.Info("worker metrics server started", slog.String("addr", cfg.Worker.MetricsAddr))
+		if err := http.ListenAndServe(cfg.Worker.MetricsAddr, metricsMux); err != nil {
 			log.Fatalf("could not start worker metrics server: %v", err)
 		}
 	}()
 
-	internalSecret := os.Getenv("INTERNAL_API_SECRET")
-	if internalSecret == "" {
-		logger.Warn("INTERNAL_API_SECRET is empty, worker cannot call print API securely")
-	}
+	internalSecret := cfg.InternalAPISecret
 
-	pdfHandler := worker.NewPDFTaskHandler(db, storageClient, redisClient, logger, internalSecret)
-	templatePreviewHandler := worker.NewTemplatePreviewHandler(db, storageClient, logger, internalSecret)
+	pdfHandler := worker.NewPDFTaskHandler(
+		db,
+		storageClient,
+		redisClient,
+		logger,
+		internalSecret,
+		cfg.Worker.InternalAPIBaseURL,
+		cfg.Worker.FrontendBaseURL,
+	)
+	templatePreviewHandler := worker.NewTemplatePreviewHandler(
+		db,
+		storageClient,
+		logger,
+		internalSecret,
+		cfg.Worker.InternalAPIBaseURL,
+		cfg.Worker.FrontendBaseURL,
+	)
 
 	mux := asynq.NewServeMux()
 	mux.Use(metrics.AsynqMetricsMiddleware())

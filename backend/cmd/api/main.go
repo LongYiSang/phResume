@@ -101,6 +101,7 @@ func main() {
 		redisClient,
 		slogLogger,
 		storageClient,
+		cfg.InternalAPISecret,
 		clamdAddr,
 		cfg.API.MaxResumes,
 		cfg.API.MaxTemplates,

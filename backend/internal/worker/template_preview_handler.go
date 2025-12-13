@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -19,10 +20,12 @@ import (
 
 // TemplatePreviewHandler 负责模板缩略图生成任务。
 type TemplatePreviewHandler struct {
-	db             *gorm.DB
-	storage        *storage.Client
-	logger         *slog.Logger
-	internalSecret string
+	db                 *gorm.DB
+	storage            *storage.Client
+	logger             *slog.Logger
+	internalSecret     string
+	internalAPIBaseURL string
+	frontendBaseURL    string
 }
 
 func NewTemplatePreviewHandler(
@@ -30,12 +33,16 @@ func NewTemplatePreviewHandler(
 	storageClient *storage.Client,
 	logger *slog.Logger,
 	internalSecret string,
+	internalAPIBaseURL string,
+	frontendBaseURL string,
 ) *TemplatePreviewHandler {
 	return &TemplatePreviewHandler{
-		db:             db,
-		storage:        storageClient,
-		logger:         logger,
-		internalSecret: internalSecret,
+		db:                 db,
+		storage:            storageClient,
+		logger:             logger,
+		internalSecret:     internalSecret,
+		internalAPIBaseURL: strings.TrimRight(strings.TrimSpace(internalAPIBaseURL), "/"),
+		frontendBaseURL:    strings.TrimRight(strings.TrimSpace(frontendBaseURL), "/"),
 	}
 }
 
@@ -64,16 +71,13 @@ func (h *TemplatePreviewHandler) ProcessTask(ctx context.Context, t *asynq.Task)
 		return err
 	}
 
-	printData, err := fetchInternalPrintData(ctx, templatePrintPath, template.ID, h.internalSecret)
+	printData, err := fetchInternalPrintData(ctx, h.internalAPIBaseURL, templatePrintPath, template.ID, h.internalSecret)
 	if err != nil {
 		log.Error("fetch internal print data failed", slog.Any("error", err))
 		return err
 	}
 
-	targetURL := fmt.Sprintf(
-		"http://frontend:3000/print-template/%d",
-		template.ID,
-	)
+	targetURL := fmt.Sprintf("%s/print-template/%d", h.frontendBaseURL, template.ID)
 
 	injectionScript := buildPrintDataInjectionScript(printData)
 	page, cleanup, err := renderFrontendPage(h.logger, targetURL, injectionScript)

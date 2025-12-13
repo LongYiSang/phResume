@@ -1,10 +1,9 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useMemo } from "react";
 
 export function Watermark() {
-  const [dataUrl, setDataUrl] = useState<string | null>(null);
-
-useEffect(() => {
+  const dataUrl = useMemo(() => {
+    if (typeof document === "undefined") return null;
     const canvas = document.createElement("canvas");
     const scale = 2;
     const w = 120 * scale;
@@ -12,7 +11,7 @@ useEffect(() => {
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    if (!ctx) return null;
     
     ctx.clearRect(0, 0, w, h);
     
@@ -43,8 +42,8 @@ useEffect(() => {
     ctx.font = `${10 * scale}px Nunito, sans-serif`;
     ctx.fillStyle = "#cbd5e1";
     ctx.fillText("Created by", 0, 15 * scale);
-    
-    setDataUrl(canvas.toDataURL("image/png"));
+
+    return canvas.toDataURL("image/png");
   }, []);
 
   return (

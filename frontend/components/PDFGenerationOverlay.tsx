@@ -1,7 +1,6 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { useEffect, useState } from "react";
 
 interface PDFGenerationOverlayProps {
   isVisible: boolean;
@@ -12,18 +11,6 @@ export function PDFGenerationOverlay({
   isVisible,
   progress,
 }: PDFGenerationOverlayProps) {
-  const [showCompletion, setShowCompletion] = useState(false);
-
-  useEffect(() => {
-    if (progress >= 100) {
-      setShowCompletion(true);
-      const timer = setTimeout(() => setShowCompletion(false), 2000); // Reset after animation
-      return () => clearTimeout(timer);
-    } else {
-      setShowCompletion(false);
-    }
-  }, [progress]);
-
   return (
     <AnimatePresence>
       {isVisible && (

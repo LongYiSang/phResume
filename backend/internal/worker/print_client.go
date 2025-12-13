@@ -10,8 +10,6 @@ import (
 	"time"
 )
 
-const internalAPIBaseURL = "http://api:8080"
-
 const (
 	resumePrintPath   = "resume/print"
 	templatePrintPath = "templates/print"
@@ -19,10 +17,15 @@ const (
 
 // fetchInternalPrintData 从后端内部打印接口拉取 JSON 数据。
 // 只允许 Worker 通过 Header 携带 INTERNAL_API_SECRET 访问。
-func fetchInternalPrintData(ctx context.Context, resourcePath string, id uint, secret string) ([]byte, error) {
+func fetchInternalPrintData(ctx context.Context, internalAPIBaseURL string, resourcePath string, id uint, secret string) ([]byte, error) {
 	secret = strings.TrimSpace(secret)
 	if secret == "" {
 		return nil, fmt.Errorf("internal api secret missing")
+	}
+
+	internalAPIBaseURL = strings.TrimRight(strings.TrimSpace(internalAPIBaseURL), "/")
+	if internalAPIBaseURL == "" {
+		return nil, fmt.Errorf("internal api base url missing")
 	}
 
 	targetURL := fmt.Sprintf("%s/v1/%s/%d", internalAPIBaseURL, strings.TrimPrefix(resourcePath, "/"), id)

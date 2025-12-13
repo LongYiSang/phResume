@@ -1,0 +1,9 @@
+.gocache/
+.gomodcache/
+tmp/
+bin/
+api
+*.exe
+*.test
+*.out
+

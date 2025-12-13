@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -29,10 +30,23 @@ type ObjectMeta struct {
 
 // NewClient 根据配置初始化 MinIO 客户端，并确保目标 Bucket 存在。
 func NewClient(cfg config.MinIOConfig) (*Client, error) {
+	bucketLookup := minio.BucketLookupAuto
+	switch strings.ToLower(strings.TrimSpace(cfg.BucketLookup)) {
+	case "", "auto":
+		bucketLookup = minio.BucketLookupAuto
+	case "dns":
+		bucketLookup = minio.BucketLookupDNS
+	case "path":
+		bucketLookup = minio.BucketLookupPath
+	default:
+		return nil, fmt.Errorf("invalid minio bucket lookup %q", cfg.BucketLookup)
+	}
+
 	internalClient, err := minio.New(cfg.Endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
-		Secure: cfg.UseSSL,
-		Region: "us-east-1",
+		Creds:        credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
+		Secure:       cfg.UseSSL,
+		Region:       cfg.Region,
+		BucketLookup: bucketLookup,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("init internal minio client: %w", err)
@@ -49,9 +63,10 @@ func NewClient(cfg config.MinIOConfig) (*Client, error) {
 	}
 
 	publicClient, err := minio.New(publicHost, &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
-		Secure: parsedPublicEndpoint.Scheme == "https",
-		Region: "us-east-1",
+		Creds:        credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
+		Secure:       parsedPublicEndpoint.Scheme == "https",
+		Region:       cfg.Region,
+		BucketLookup: bucketLookup,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("init public minio client: %w", err)
@@ -65,7 +80,10 @@ func NewClient(cfg config.MinIOConfig) (*Client, error) {
 		return nil, fmt.Errorf("check bucket %q: %w", cfg.Bucket, err)
 	}
 	if !exists {
-		if err := internalClient.MakeBucket(ctx, cfg.Bucket, minio.MakeBucketOptions{}); err != nil {
+		if !cfg.AutoCreateBucket {
+			return nil, fmt.Errorf("bucket %q does not exist (auto create disabled)", cfg.Bucket)
+		}
+		if err := internalClient.MakeBucket(ctx, cfg.Bucket, minio.MakeBucketOptions{Region: cfg.Region}); err != nil {
 			return nil, fmt.Errorf("make bucket %q: %w", cfg.Bucket, err)
 		}
 	}

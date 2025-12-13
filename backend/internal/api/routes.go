@@ -2,7 +2,6 @@ package api
 
 import (
 	"log/slog"
-	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -24,6 +23,7 @@ func RegisterRoutes(
 	redisClient *redis.Client,
 	logger *slog.Logger,
 	storageClient *storage.Client,
+	internalAPISecret string,
 	clamdAddr string,
 	maxResumes int,
 	maxTemplates int,
@@ -41,7 +41,7 @@ func RegisterRoutes(
 		db,
 		asynqClient,
 		storageClient,
-		os.Getenv("INTERNAL_API_SECRET"),
+		internalAPISecret,
 		maxResumes,
 		redisClient,
 		pdfRateLimitPerHour,
@@ -59,7 +59,7 @@ func RegisterRoutes(
 	wsHandler := NewWsHandler(redisClient, authService, logger, allowedOrigins)
 	authMiddleware := middleware.AuthMiddleware(authService)
 	assetHandler := NewAssetHandler(storageClient, logger, clamdAddr, redisClient, uploadRateLimitPerHour, uploadMaxBytes, uploadMIMEWhitelist)
-	templateHandler := NewTemplateHandler(db, asynqClient, storageClient, os.Getenv("INTERNAL_API_SECRET"), maxTemplates)
+	templateHandler := NewTemplateHandler(db, asynqClient, storageClient, internalAPISecret, maxTemplates)
 
 	v1 := router.Group("/v1")
 	{

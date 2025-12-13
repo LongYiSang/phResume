@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/go-rod/rod"
@@ -22,11 +23,13 @@ import (
 
 // PDFTaskHandler 负责消费 PDF 生成任务。
 type PDFTaskHandler struct {
-	db             *gorm.DB
-	storage        *storage.Client
-	redisClient    *redis.Client
-	logger         *slog.Logger
-	internalSecret string
+	db                 *gorm.DB
+	storage            *storage.Client
+	redisClient        *redis.Client
+	logger             *slog.Logger
+	internalSecret     string
+	internalAPIBaseURL string
+	frontendBaseURL    string
 }
 
 // NewPDFTaskHandler 创建任务处理器。
@@ -36,13 +39,17 @@ func NewPDFTaskHandler(
 	redisClient *redis.Client,
 	logger *slog.Logger,
 	internalSecret string,
+	internalAPIBaseURL string,
+	frontendBaseURL string,
 ) *PDFTaskHandler {
 	return &PDFTaskHandler{
-		db:             db,
-		storage:        storage,
-		redisClient:    redisClient,
-		logger:         logger,
-		internalSecret: internalSecret,
+		db:                 db,
+		storage:            storage,
+		redisClient:        redisClient,
+		logger:             logger,
+		internalSecret:     internalSecret,
+		internalAPIBaseURL: strings.TrimRight(strings.TrimSpace(internalAPIBaseURL), "/"),
+		frontendBaseURL:    strings.TrimRight(strings.TrimSpace(frontendBaseURL), "/"),
 	}
 }
 
@@ -128,15 +135,12 @@ func (h *PDFTaskHandler) generatePDFFromFrontend(ctx context.Context, resumeID u
 		}
 	}()
 
-	printData, err := fetchInternalPrintData(ctx, resumePrintPath, resumeID, h.internalSecret)
+	printData, err := fetchInternalPrintData(ctx, h.internalAPIBaseURL, resumePrintPath, resumeID, h.internalSecret)
 	if err != nil {
 		return nil, nil, cleanup, err
 	}
 
-	targetURL := fmt.Sprintf(
-		"http://frontend:3000/print/%d",
-		resumeID,
-	)
+	targetURL := fmt.Sprintf("%s/print/%d", h.frontendBaseURL, resumeID)
 
 	injectionScript := buildPrintDataInjectionScript(printData)
 	page, cleanup, err = renderFrontendPage(h.logger, targetURL, injectionScript)

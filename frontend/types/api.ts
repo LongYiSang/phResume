@@ -20,7 +20,7 @@ export interface LoginResponse {
   must_change_password?: boolean;
 }
 
-export interface RefreshResponse extends LoginResponse {}
+export type RefreshResponse = LoginResponse;
 
 export type LogoutResponse = Record<string, never>;
 
