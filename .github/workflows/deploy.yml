@@ -119,4 +119,5 @@ jobs:
           set -euo pipefail
           test -n "${SSH_USER}"
           SSH_OPTS=(-i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "${SSH_PORT}")
-          ssh "${SSH_OPTS[@]}" "${SSH_USER}@${SSH_HOST}" "set -euo pipefail; cd '${DEPLOY_PATH}'; export GHCR_OWNER='${OWNER_LC}'; export APP_VERSION='${SHA}'; docker compose -f docker-compose.prod.yml pull; docker compose -f docker-compose.prod.yml up -d --remove-orphans"
+          ssh "${SSH_OPTS[@]}" "${SSH_USER}@${SSH_HOST}" "bash -lc 'set -euo pipefail; cd \"${DEPLOY_PATH}\"; export GHCR_OWNER=\"${OWNER_LC}\"; export APP_VERSION=\"${SHA}\"; docker compose -f docker-compose.prod.yml pull; docker compose -f docker-compose.prod.yml up -d --remove-orphans'"
+
