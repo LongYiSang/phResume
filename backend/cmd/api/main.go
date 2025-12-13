@@ -102,6 +102,7 @@ func main() {
 		slogLogger,
 		storageClient,
 		clamdAddr,
+		cfg.Internal.APISecret,
 		cfg.API.MaxResumes,
 		cfg.API.MaxTemplates,
 		cfg.API.AllowedOrigins,
