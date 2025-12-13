@@ -15,7 +15,8 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  OWNER: ${{ github.repository_owner }}
+  # GHCR 镜像命名要求仓库路径全小写；GitHub 用户名/组织名可能包含大写，需要转小写。
+  OWNER: ${{ toLower(github.repository_owner) }}
   SHA: ${{ github.sha }}
   DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/opt/phresume' }}
 
