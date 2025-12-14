@@ -19,7 +19,10 @@ func renderFrontendPage(logger *slog.Logger, targetURL string, preReadyScript st
 
 	launch := launcher.New().
 		Headless(true).
-		NoSandbox(true)
+		NoSandbox(true).
+		// 容器内常见问题：/dev/shm 太小会导致 Chromium 卡死/崩溃
+		Set("disable-dev-shm-usage").
+		Set("no-zygote")
 	defer func() {
 		if err != nil {
 			launch.Cleanup()
@@ -40,7 +43,10 @@ func renderFrontendPage(logger *slog.Logger, targetURL string, preReadyScript st
 		return nil, cleanup, fmt.Errorf("connect browser: %w", err)
 	}
 
-	page := browser.MustPage(targetURL)
+	page, err := browser.Page(proto.TargetCreateTarget{URL: targetURL})
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("open page %q: %w", targetURL, err)
+	}
 	cleanup = func() {
 		if page != nil {
 			_ = page.Close()

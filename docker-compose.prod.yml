@@ -115,6 +115,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      frontend:
+        condition: service_started
       api:
         condition: service_started
     environment:
