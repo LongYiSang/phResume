@@ -37,6 +37,7 @@ tmp/
 # Build caches
 .turbo/
 .vercel/
+.cache/
 /backend/test.pdf
 /backend/internal/config/config_test.go
 /backend/api

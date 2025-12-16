@@ -2,9 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Quicksand } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
-import { AuthProvider } from "@/context/AuthContext";
-import Providers from "./providers";
-import { ChangePasswordGate } from "@/components/ChangePasswordGate";
+import { AppProviders } from "@/components/AppProviders";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -147,12 +145,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${quicksand.variable} ${nunito.variable} ${openSans.variable} ${robotoMono.variable} ${notoSansSC.variable} ${wenQuanYiZenHei.variable} antialiased`}
       >
-        <AuthProvider>
-          <Providers>
-            {children}
-            <ChangePasswordGate />
-          </Providers>
-        </AuthProvider>
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -13,21 +14,40 @@ import (
 )
 
 func renderFrontendPage(logger *slog.Logger, targetURL string, preReadyScript string) (_ *rod.Page, cleanup func(), err error) {
-	cleanup = func() {}
+	var (
+		launch  *launcher.Launcher
+		browser *rod.Browser
+		page    *rod.Page
+	)
+
+	cleanup = func() {
+		if page != nil {
+			_ = page.Close()
+		}
+		if browser != nil {
+			_ = browser.Close()
+		}
+		if launch != nil {
+			launch.Cleanup()
+		}
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("render frontend page panic: %v\n%s", recovered, debug.Stack())
+		}
+		if err != nil {
+			cleanup()
+		}
+	}()
 
 	logger.Info("Worker: Navigating to frontend print page...", slog.String("url", targetURL))
 
-	launch := launcher.New().
+	launch = launcher.New().
 		Headless(true).
 		NoSandbox(true).
 		// 容器内常见问题：/dev/shm 太小会导致 Chromium 卡死/崩溃
 		Set("disable-dev-shm-usage").
 		Set("no-zygote")
-	defer func() {
-		if err != nil {
-			launch.Cleanup()
-		}
-	}()
 
 	if path, ok := launcher.LookPath(); ok {
 		launch = launch.Bin(path)
@@ -38,24 +58,19 @@ func renderFrontendPage(logger *slog.Logger, targetURL string, preReadyScript st
 		return nil, cleanup, fmt.Errorf("launch chromium: %w", err)
 	}
 
-	browser := rod.New().ControlURL(browserURL).Timeout(90 * time.Second)
+	browser = rod.New().ControlURL(browserURL).Timeout(90 * time.Second)
 	if err := browser.Connect(); err != nil {
 		return nil, cleanup, fmt.Errorf("connect browser: %w", err)
 	}
 
-	page, err := browser.Page(proto.TargetCreateTarget{URL: targetURL})
+	page, err = browser.Page(proto.TargetCreateTarget{URL: targetURL})
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("open page %q: %w", targetURL, err)
 	}
-	cleanup = func() {
-		if page != nil {
-			_ = page.Close()
-		}
-		_ = browser.Close()
-		launch.Cleanup()
-	}
 
-	page.MustWaitLoad()
+	if err := page.Timeout(90 * time.Second).WaitLoad(); err != nil {
+		return nil, cleanup, fmt.Errorf("wait page load: %w", err)
+	}
 
 	if strings.TrimSpace(preReadyScript) != "" {
 		logger.Info("Worker: Injecting print data before render...")
@@ -65,7 +80,9 @@ func renderFrontendPage(logger *slog.Logger, targetURL string, preReadyScript st
 	}
 
 	logger.Info("Worker: Waiting for frontend render signal (#pdf-render-ready)...")
-	page.Timeout(30 * time.Second).MustElement("#pdf-render-ready")
+	if _, err := page.Timeout(30 * time.Second).Element("#pdf-render-ready"); err != nil {
+		return nil, cleanup, fmt.Errorf("wait for #pdf-render-ready: %w", err)
+	}
 
 	// 额外等待 WebFont/系统字体就绪，避免回退字体度量导致排版差异
 	logger.Info("Worker: Waiting for document.fonts.ready...")
@@ -87,7 +104,7 @@ func renderFrontendPage(logger *slog.Logger, targetURL string, preReadyScript st
 	}
 
 	logger.Info("Worker: Marking A4 canvas as #pdf-root...")
-	page.MustEval(`() => {
+	if _, err := page.Timeout(10 * time.Second).Eval(`() => {
   const normalize = s => (s || '').replace(/\s+/g, '').toLowerCase();
   let target = null;
   const all = Array.from(document.querySelectorAll('body *'));
@@ -104,7 +121,9 @@ func renderFrontendPage(logger *slog.Logger, targetURL string, preReadyScript st
   }
   if (target) target.id = 'pdf-root';
   return !!target;
-}`)
+}`); err != nil {
+		return nil, cleanup, fmt.Errorf("mark pdf root: %w", err)
+	}
 
 	logger.Info("Worker: Injecting print-cleanup CSS...")
 	cleanupCSS := `
@@ -238,7 +257,7 @@ func renderFrontendPage(logger *slog.Logger, targetURL string, preReadyScript st
 		return nil, cleanup, fmt.Errorf("inject cleanup css: %w", err)
 	}
 
-	page.MustEval(`() => {
+	if _, err := page.Timeout(10 * time.Second).Eval(`() => {
   const sels = [
     '#nextjs-devtools',
     '[data-nextjs-devtools]',
@@ -265,9 +284,13 @@ func renderFrontendPage(logger *slog.Logger, targetURL string, preReadyScript st
       }
     }
   }
-}`)
+}`); err != nil {
+		return nil, cleanup, fmt.Errorf("cleanup dev overlays: %w", err)
+	}
 
-	page.MustWaitIdle()
+	if err := page.WaitIdle(30 * time.Second); err != nil {
+		return nil, cleanup, fmt.Errorf("wait idle: %w", err)
+	}
 	return page, cleanup, nil
 }
 

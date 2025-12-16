@@ -223,10 +223,6 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("worker.frontend_base_url", "http://frontend:3000")
 	v.SetDefault("worker.metrics_addr", ":9100")
 	v.SetDefault("worker.concurrency", 10)
-	v.SetDefault("worker.internal_api_base_url", "http://api:8080")
-	v.SetDefault("worker.frontend_base_url", "http://frontend:3000")
-	v.SetDefault("worker.metrics_addr", ":9100")
-	v.SetDefault("worker.concurrency", 10)
 }
 
 func bindEnv(v *viper.Viper) error {
