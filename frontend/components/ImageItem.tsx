@@ -14,21 +14,53 @@ type ImageItemProps = {
   preSignedURL?: string;
 };
 
-export function ImageItem({ objectKey, style, preSignedURL }: ImageItemProps) {
+function useCombinedStyle(style?: CSSProperties) {
+  return useMemo<CSSProperties>(
+    () => ({
+      width: "100%",
+      height: "100%",
+      objectFit: "cover",
+      transformOrigin: "center",
+      display: "block",
+      borderRadius: "0.375rem",
+      ...style,
+    }),
+    [style],
+  );
+}
+
+function InlineImage({
+  src,
+  style,
+}: {
+  src: string;
+  style?: CSSProperties;
+}) {
+  const combinedStyle = useCombinedStyle(style);
+  return (
+    <img
+      src={src}
+      alt="上传的图片"
+      style={combinedStyle}
+      className="pointer-events-none select-none"
+    />
+  );
+}
+
+function AuthedImage({
+  objectKey,
+  style,
+}: {
+  objectKey: string;
+  style?: CSSProperties;
+}) {
   const { accessToken } = useAuth();
   const authFetch = useAuthFetch();
-  const [imageURL, setImageURL] = useState<string | null>(
-    preSignedURL ?? null,
-  );
+  const [imageURL, setImageURL] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (preSignedURL) {
-      setImageURL(preSignedURL);
-      return;
-    }
-
-    if (!objectKey || !accessToken) {
+    if (!accessToken) {
       setImageURL(null);
       return;
     }
@@ -65,20 +97,9 @@ export function ImageItem({ objectKey, style, preSignedURL }: ImageItemProps) {
     return () => {
       isMounted = false;
     };
-  }, [objectKey, accessToken, preSignedURL, authFetch]);
+  }, [objectKey, accessToken, authFetch]);
 
-  const combinedStyle = useMemo<CSSProperties>(
-    () => ({
-      width: "100%",
-      height: "100%",
-      objectFit: "cover",
-      transformOrigin: "center",
-      display: "block",
-      borderRadius: "0.375rem",
-      ...style,
-    }),
-    [style],
-  );
+  const combinedStyle = useCombinedStyle(style);
 
   if (!imageURL) {
     return (
@@ -91,12 +112,25 @@ export function ImageItem({ objectKey, style, preSignedURL }: ImageItemProps) {
     );
   }
 
-  return (
-    <img
-      src={imageURL}
-      alt="上传的图片"
-      style={combinedStyle}
-      className="pointer-events-none select-none"
-    />
-  );
+  return <InlineImage src={imageURL} style={style} />;
+}
+
+export function ImageItem({ objectKey, style, preSignedURL }: ImageItemProps) {
+  if (preSignedURL) {
+    return <InlineImage src={preSignedURL} style={style} />;
+  }
+
+  if (!objectKey) {
+    const combinedStyle = useCombinedStyle(style);
+    return (
+      <div
+        className="flex h-full w-full items-center justify-center rounded-md bg-zinc-100 text-xs text-zinc-500"
+        style={combinedStyle}
+      >
+        无法加载图片
+      </div>
+    );
+  }
+
+  return <AuthedImage objectKey={objectKey} style={style} />;
 }
