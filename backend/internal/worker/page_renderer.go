@@ -54,8 +54,6 @@ func renderFrontendPage(logger *slog.Logger, targetURL string, preReadyScript st
 		}
 	}()
 
-	logger.Info("Worker: Navigating to frontend print page...", slog.String("url", targetURL))
-
 	launch = launcher.New().
 		// 关闭 Leakless：生产环境使用 tmpfs(/tmp) 时通常是 noexec，
 		// Leakless 需要在 /tmp 解压并 exec 自身，会触发 permission denied。
@@ -86,20 +84,38 @@ func renderFrontendPage(logger *slog.Logger, targetURL string, preReadyScript st
 	}
 	browser = browser.CancelTimeout()
 
-	page, err = browser.Timeout(45 * time.Second).Page(proto.TargetCreateTarget{URL: targetURL})
+	page, err = browser.Timeout(45 * time.Second).Page(proto.TargetCreateTarget{})
 	if err != nil {
-		return nil, cleanup, fmt.Errorf("open page %q: %w", targetURL, err)
+		return nil, cleanup, fmt.Errorf("create page: %w", err)
 	}
 	page = page.CancelTimeout()
+
+	if strings.TrimSpace(preReadyScript) != "" {
+		// 用 EvalOnNewDocument 把数据“导航前注入”，彻底消除前端 5s 轮询窗口与 worker 注入时机的竞态。
+		logger.Info("Worker: Pre-injecting print data on new document...")
+		if _, injectErr := page.EvalOnNewDocument(preReadyScript); injectErr != nil {
+			return nil, cleanup, fmt.Errorf("pre-inject print data: %w", injectErr)
+		}
+	}
+
+	logger.Info("Worker: Navigating to frontend print page...", slog.String("url", targetURL))
+	if err := page.Timeout(60 * time.Second).Navigate(targetURL); err != nil {
+		return nil, cleanup, fmt.Errorf("navigate to %q: %w", targetURL, err)
+	}
 
 	if err := page.Timeout(90 * time.Second).WaitLoad(); err != nil {
 		return nil, cleanup, fmt.Errorf("wait page load: %w", err)
 	}
 
+	// 兜底：若浏览器在极端情况下未触发新文档脚本（或被某些导航路径绕开），确保打印数据仍被注入。
 	if strings.TrimSpace(preReadyScript) != "" {
-		logger.Info("Worker: Injecting print data before render...")
-		if _, evalErr := page.Timeout(10 * time.Second).Eval(preReadyScript); evalErr != nil {
-			return nil, cleanup, fmt.Errorf("inject print data: %w", evalErr)
+		readyObj, evalErr := page.Timeout(2 * time.Second).Eval(`() => Boolean(window.__PRINT_DATA__)`)
+		if evalErr == nil && !readyObj.Value.Bool() {
+			logger.Info("Worker: Print data missing after load, injecting fallback...")
+			fallback := fmt.Sprintf(`() => { %s }`, preReadyScript)
+			if _, injectErr := page.Timeout(10 * time.Second).Eval(fallback); injectErr != nil {
+				return nil, cleanup, fmt.Errorf("inject print data fallback: %w", injectErr)
+			}
 		}
 	}
 

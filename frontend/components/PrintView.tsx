@@ -31,6 +31,8 @@ import { Watermark } from "@/components/Watermark";
 
 type ItemLayout = ResumeItem["layout"];
 
+const PRINT_DATA_READY_EVENT = "print-data-ready";
+
 function resolveLayout(layout?: ItemLayout) {
   return {
     x: layout?.x ?? 0,
@@ -64,47 +66,76 @@ export function PrintView({ resourcePath: _resourcePath }: PrintViewProps) {
       return;
     }
 
-    let cancelled = false;
-    const start = Date.now();
-
     setIsLoading(true);
     setError(null);
     setIsRendered(false);
 
-    const pollInjectedData = async () => {
-      if (cancelled) return;
+    let cancelled = false;
+    let resolved = false;
+    let resolving = false;
+    let hasHinted = false;
+    const start = Date.now();
+    let pollInterval: number | null = null;
 
-      const data = typeof window !== "undefined" ? window.__PRINT_DATA__ : undefined;
-      if (data) {
-        setResumeData(data);
-        const fontsReady = (document as unknown as { fonts?: { ready?: Promise<void> } }).fonts?.ready;
-        const timeout = new Promise<void>((resolve) => setTimeout(resolve, 3000));
-        if (fontsReady) {
-          try {
-            await Promise.race([fontsReady, timeout]);
-          } catch {}
-        }
-        if (!cancelled) {
-          setIsRendered(true);
-          setIsLoading(false);
-        }
-        return;
+    const finalizeRender = async (data: ResumeData) => {
+      if (cancelled || resolved || resolving) return;
+      resolving = true;
+      setResumeData(data);
+
+      const fontsReady = (document as unknown as { fonts?: { ready?: Promise<void> } }).fonts?.ready;
+      if (fontsReady) {
+        const timeout = new Promise<void>((resolve) =>
+          setTimeout(resolve, 3000),
+        );
+        try {
+          await Promise.race([fontsReady, timeout]);
+        } catch {}
       }
 
-      if (Date.now() - start > 5000) {
-        setError("打印数据未注入");
+      if (!cancelled) {
+        resolved = true;
+        setIsRendered(true);
         setIsLoading(false);
-        setIsRendered(false);
-        return;
+        if (pollInterval !== null) {
+          window.clearInterval(pollInterval);
+          pollInterval = null;
+        }
       }
-
-      setTimeout(pollInjectedData, 50);
     };
 
-    pollInjectedData();
+    const tryResolveFromWindow = async () => {
+      const data =
+        typeof window !== "undefined" ? window.__PRINT_DATA__ : undefined;
+      if (!data) return false;
+      await finalizeRender(data);
+      return true;
+    };
+
+    const onPrintDataReady = () => {
+      void tryResolveFromWindow();
+    };
+
+    void tryResolveFromWindow();
+    window.addEventListener(PRINT_DATA_READY_EVENT, onPrintDataReady);
+
+    pollInterval = window.setInterval(() => {
+      if (cancelled || resolved) return;
+      void tryResolveFromWindow();
+
+      // 仅提示，不中断等待：彻底消除 worker 注入时机与前端轮询窗口的竞态。
+      if (!hasHinted && Date.now() - start > 15_000) {
+        hasHinted = true;
+        setError("打印数据仍未注入，继续等待...");
+      }
+    }, 50);
 
     return () => {
       cancelled = true;
+      window.removeEventListener(PRINT_DATA_READY_EVENT, onPrintDataReady);
+      if (pollInterval !== null) {
+        window.clearInterval(pollInterval);
+        pollInterval = null;
+      }
     };
   }, [resourceId]);
 

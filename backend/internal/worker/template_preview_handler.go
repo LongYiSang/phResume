@@ -79,7 +79,7 @@ func (h *TemplatePreviewHandler) ProcessTask(ctx context.Context, t *asynq.Task)
 
 	targetURL := fmt.Sprintf("%s/print-template/%d", h.frontendBaseURL, template.ID)
 
-	injectionScript := buildPrintDataInjectionScript(printData)
+	injectionScript := buildPrintDataBootstrapScript(printData)
 	page, cleanup, err := renderFrontendPage(h.logger, targetURL, injectionScript)
 	if err != nil {
 		log.Error("render template page failed", slog.Any("error", err))

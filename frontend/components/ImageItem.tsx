@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useAuthFetch } from "@/hooks/useAuthFetch";
@@ -14,19 +14,16 @@ type ImageItemProps = {
   preSignedURL?: string;
 };
 
-function useCombinedStyle(style?: CSSProperties) {
-  return useMemo<CSSProperties>(
-    () => ({
-      width: "100%",
-      height: "100%",
-      objectFit: "cover",
-      transformOrigin: "center",
-      display: "block",
-      borderRadius: "0.375rem",
-      ...style,
-    }),
-    [style],
-  );
+function combineStyle(style?: CSSProperties): CSSProperties {
+  return {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    transformOrigin: "center",
+    display: "block",
+    borderRadius: "0.375rem",
+    ...style,
+  };
 }
 
 function InlineImage({
@@ -36,7 +33,7 @@ function InlineImage({
   src: string;
   style?: CSSProperties;
 }) {
-  const combinedStyle = useCombinedStyle(style);
+  const combinedStyle = combineStyle(style);
   return (
     <img
       src={src}
@@ -99,7 +96,7 @@ function AuthedImage({
     };
   }, [objectKey, accessToken, authFetch]);
 
-  const combinedStyle = useCombinedStyle(style);
+  const combinedStyle = combineStyle(style);
 
   if (!imageURL) {
     return (
@@ -121,7 +118,7 @@ export function ImageItem({ objectKey, style, preSignedURL }: ImageItemProps) {
   }
 
   if (!objectKey) {
-    const combinedStyle = useCombinedStyle(style);
+    const combinedStyle = combineStyle(style);
     return (
       <div
         className="flex h-full w-full items-center justify-center rounded-md bg-zinc-100 text-xs text-zinc-500"

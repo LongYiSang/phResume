@@ -55,9 +55,9 @@ func fetchInternalPrintData(ctx context.Context, internalAPIBaseURL string, reso
 	return data, nil
 }
 
-// buildPrintDataInjectionScript 构造在浏览器里注入 window.__PRINT_DATA__ 的脚本。
-// 通过 JSON.parse + Go 的 Quote 来保证脚本安全。
-func buildPrintDataInjectionScript(data []byte) string {
+// buildPrintDataBootstrapScript 构造在浏览器里注入 window.__PRINT_DATA__ 的脚本源码。
+// 通过 JSON.parse + Go 的 Quote 来保证脚本安全；并额外派发事件，便于前端在 hydration 后兜底捕获。
+func buildPrintDataBootstrapScript(data []byte) string {
 	quoted := strconv.Quote(string(data))
-	return fmt.Sprintf(`() => { window.__PRINT_DATA__ = JSON.parse(%s); }`, quoted)
+	return fmt.Sprintf(`window.__PRINT_DATA__ = JSON.parse(%s); window.dispatchEvent(new Event("print-data-ready"));`, quoted)
 }

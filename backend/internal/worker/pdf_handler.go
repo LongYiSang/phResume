@@ -142,7 +142,7 @@ func (h *PDFTaskHandler) generatePDFFromFrontend(ctx context.Context, resumeID u
 
 	targetURL := fmt.Sprintf("%s/print/%d", h.frontendBaseURL, resumeID)
 
-	injectionScript := buildPrintDataInjectionScript(printData)
+	injectionScript := buildPrintDataBootstrapScript(printData)
 	page, cleanup, err = renderFrontendPage(h.logger, targetURL, injectionScript)
 	if err != nil {
 		return nil, nil, cleanup, err
