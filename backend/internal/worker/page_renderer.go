@@ -57,6 +57,9 @@ func renderFrontendPage(logger *slog.Logger, targetURL string, preReadyScript st
 	logger.Info("Worker: Navigating to frontend print page...", slog.String("url", targetURL))
 
 	launch = launcher.New().
+		// 关闭 Leakless：生产环境使用 tmpfs(/tmp) 时通常是 noexec，
+		// Leakless 需要在 /tmp 解压并 exec 自身，会触发 permission denied。
+		Leakless(false).
 		Headless(true).
 		NoSandbox(true).
 		// 云端常见：GPU/Vulkan 初始化失败会导致 GPU 进程反复崩溃，进而让 CDP 调用卡死/超时。
