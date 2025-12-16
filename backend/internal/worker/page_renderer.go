@@ -18,6 +18,7 @@ func renderFrontendPage(logger *slog.Logger, targetURL string, preReadyScript st
 		launch  *launcher.Launcher
 		browser *rod.Browser
 		page    *rod.Page
+		force   bool
 	)
 
 	cleanup = func() {
@@ -25,17 +26,30 @@ func renderFrontendPage(logger *slog.Logger, targetURL string, preReadyScript st
 			_ = page.Close()
 		}
 		if browser != nil {
-			_ = browser.Close()
+			_ = browser.Timeout(5 * time.Second).Close()
 		}
 		if launch != nil {
-			launch.Cleanup()
+			if force {
+				launch.Kill()
+			}
+			done := make(chan struct{})
+			go func() {
+				launch.Cleanup()
+				close(done)
+			}()
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+			}
 		}
 	}
 	defer func() {
 		if recovered := recover(); recovered != nil {
+			force = true
 			err = fmt.Errorf("render frontend page panic: %v\n%s", recovered, debug.Stack())
 		}
 		if err != nil {
+			force = true
 			cleanup()
 		}
 	}()
@@ -58,15 +72,18 @@ func renderFrontendPage(logger *slog.Logger, targetURL string, preReadyScript st
 		return nil, cleanup, fmt.Errorf("launch chromium: %w", err)
 	}
 
-	browser = rod.New().ControlURL(browserURL).Timeout(90 * time.Second)
+	browser = rod.New().ControlURL(browserURL)
+	browser = browser.Timeout(30 * time.Second)
 	if err := browser.Connect(); err != nil {
 		return nil, cleanup, fmt.Errorf("connect browser: %w", err)
 	}
+	browser = browser.CancelTimeout()
 
-	page, err = browser.Page(proto.TargetCreateTarget{URL: targetURL})
+	page, err = browser.Timeout(45 * time.Second).Page(proto.TargetCreateTarget{URL: targetURL})
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("open page %q: %w", targetURL, err)
 	}
+	page = page.CancelTimeout()
 
 	if err := page.Timeout(90 * time.Second).WaitLoad(); err != nil {
 		return nil, cleanup, fmt.Errorf("wait page load: %w", err)

@@ -52,7 +52,8 @@ x-app-env: &app-env
   # --- Worker runtime ---
   WORKER_INTERNAL_API_BASE_URL: ${WORKER_INTERNAL_API_BASE_URL:-http://api:8080}
   WORKER_FRONTEND_BASE_URL: ${WORKER_FRONTEND_BASE_URL:-http://frontend:3000}
-  WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-5}
+  # 生产环境建议保持 1（Chromium 渲染对 2C4G 很吃资源；并发过高会导致 CDP 超时与重试风暴）
+  WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
   WORKER_METRICS_ADDR: ${WORKER_METRICS_ADDR:-:9100}
 
 services:
