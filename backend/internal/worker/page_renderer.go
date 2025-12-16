@@ -59,6 +59,10 @@ func renderFrontendPage(logger *slog.Logger, targetURL string, preReadyScript st
 	launch = launcher.New().
 		Headless(true).
 		NoSandbox(true).
+		// 云端常见：GPU/Vulkan 初始化失败会导致 GPU 进程反复崩溃，进而让 CDP 调用卡死/超时。
+		Set("disable-gpu").
+		Set("disable-vulkan").
+		Set("use-gl", "swiftshader").
 		// 容器内常见问题：/dev/shm 太小会导致 Chromium 卡死/崩溃
 		Set("disable-dev-shm-usage").
 		Set("no-zygote")

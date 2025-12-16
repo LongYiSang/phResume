@@ -111,6 +111,11 @@ services:
   worker:
     <<: *service-defaults
     image: ghcr.io/${GHCR_OWNER:?请设置 GHCR_OWNER}/phresume-worker:${APP_VERSION:-latest}
+    # Chromium 在容器里运行依赖共享内存；默认 /dev/shm=64MB 容易导致卡死/超时。
+    shm_size: "1g"
+    # 配合 WORKER 里的 --disable-dev-shm-usage，让 Chromium 走 /tmp（此处用 tmpfs 提升稳定性与速度）。
+    tmpfs:
+      - /tmp
     depends_on:
       db:
         condition: service_healthy
