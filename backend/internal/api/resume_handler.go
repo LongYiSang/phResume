@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -287,12 +288,40 @@ func (h *ResumeHandler) DeleteResume(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+	logger := middleware.LoggerFromContext(c).With(
+		slog.Uint64("user_id", uint64(userID)),
+		slog.Uint64("resume_id", uint64(resume.ID)),
+	)
+
+	previewKey := strings.TrimSpace(resume.PreviewObjectKey)
+	previewPrefix := fmt.Sprintf("thumbnails/resume/%d/", resume.ID)
+	if previewKey == "" {
+		previewPrefix = fmt.Sprintf("resume/%d/", resume.ID)
+	}
+
+	// 原子语义（口径 A）：先删 MinIO，成功后再删 DB。
+	if previewKey != "" {
+		if err := h.storage.DeleteObject(ctx, previewKey); err != nil {
+			logger.Error("delete resume preview object failed", slog.String("object_key", previewKey), slog.Any("error", err))
+			Internal(c, "failed to delete resume preview")
+			return
+		}
+	} else {
+		if err := h.storage.DeletePrefix(ctx, previewPrefix); err != nil {
+			logger.Error("delete resume preview prefix failed", slog.String("prefix", previewPrefix), slog.Any("error", err))
+			Internal(c, "failed to delete resume preview")
+			return
+		}
+	}
+
 	if err := h.db.WithContext(ctx).Delete(&database.Resume{}, resume.ID).Error; err != nil {
+		logger.Error("delete resume record failed", slog.Any("error", err))
 		Internal(c, "failed to delete resume")
 		return
 	}
 
 	if err := h.assignLatestResumeAsActive(ctx, userID); err != nil {
+		logger.Error("update active resume after delete failed", slog.Any("error", err))
 		Internal(c, "failed to update active resume")
 		return
 	}

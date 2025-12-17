@@ -167,7 +167,7 @@ func (h *PDFTaskHandler) generatePreviewImage(ctx context.Context, resume *datab
 		return fmt.Errorf("capture preview screenshot: %w", err)
 	}
 
-	objectName := fmt.Sprintf("resume/%d/preview_%d.jpg", resume.ID, time.Now().Unix())
+	objectName := fmt.Sprintf("thumbnails/resume/%d/preview.jpg", resume.ID)
 	reader := bytes.NewReader(previewBytes)
 	if _, err := h.storage.UploadFile(ctx, objectName, reader, int64(len(previewBytes)), "image/jpeg"); err != nil {
 		return fmt.Errorf("upload preview image: %w", err)
@@ -178,7 +178,10 @@ func (h *PDFTaskHandler) generatePreviewImage(ctx context.Context, resume *datab
 		return fmt.Errorf("generate preview presigned url: %w", err)
 	}
 
-	if err := h.db.WithContext(ctx).Model(resume).Update("preview_image_url", presignedURL).Error; err != nil {
+	if err := h.db.WithContext(ctx).Model(resume).Updates(map[string]any{
+		"preview_image_url":  presignedURL,
+		"preview_object_key": objectName,
+	}).Error; err != nil {
 		return fmt.Errorf("update resume preview url: %w", err)
 	}
 

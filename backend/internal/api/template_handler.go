@@ -3,8 +3,11 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
@@ -140,8 +143,31 @@ func (h *TemplateHandler) DeleteTemplate(c *gin.Context) {
 		return
 	}
 
-	if err := h.db.WithContext(c.Request.Context()).
-		Delete(&database.Template{}, model.ID).Error; err != nil {
+	ctx := c.Request.Context()
+	logger := middleware.LoggerFromContext(c).With(
+		slog.Uint64("user_id", uint64(userID)),
+		slog.Uint64("template_id", uint64(model.ID)),
+	)
+
+	previewKey := strings.TrimSpace(model.PreviewObjectKey)
+	previewPrefix := fmt.Sprintf("thumbnails/template/%d/", model.ID)
+
+	if previewKey != "" {
+		if err := h.storage.DeleteObject(ctx, previewKey); err != nil {
+			logger.Error("delete template preview object failed", slog.String("object_key", previewKey), slog.Any("error", err))
+			Internal(c, "failed to delete template preview")
+			return
+		}
+	} else {
+		if err := h.storage.DeletePrefix(ctx, previewPrefix); err != nil {
+			logger.Error("delete template preview prefix failed", slog.String("prefix", previewPrefix), slog.Any("error", err))
+			Internal(c, "failed to delete template preview")
+			return
+		}
+	}
+
+	if err := h.db.WithContext(ctx).Delete(&database.Template{}, model.ID).Error; err != nil {
+		logger.Error("delete template record failed", slog.Any("error", err))
 		Internal(c, "failed to delete template")
 		return
 	}

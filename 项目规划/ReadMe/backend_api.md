@@ -4,7 +4,7 @@ API 基础前缀：`/v1`
 
 - 认证方式：`Authorization: Bearer <access_token>`（RS256 JWT）
 - 刷新令牌通过 `HttpOnly` Cookie（名为 `refresh_token`）或请求体字段传递
-- 生成 PDF/预览的内部打印接口需 `internal_token` 与环境变量 `INTERNAL_API_SECRET` 一致
+- 生成 PDF/预览的内部打印接口需 Header `X-Internal-Secret` 与环境变量 `INTERNAL_API_SECRET` 一致
 - 所有时间字段为 ISO8601 字符串；ID 为整数（除非另有说明）
 - 错误响应约定：所有失败响应体统一为 `{ "error": string }`，未授权文案统一为 `unauthorized`
 
@@ -178,9 +178,13 @@ API 基础前缀：`/v1`
       ```json
       { "message": "PDF generation request accepted", "task_id": "asynq-task-id" }
       ```
+    - 429 触发生成频率限制：`{ "error": "rate limit exceeded" }`
     - 400/404/500 视 ID 与入队结果
 
 - `GET /v1/resume/:id/download-link`
+  - 查询参数：
+    - `download`：可选。`1` 表示强制下载（设置 `Content-Disposition: attachment`）。
+    - `filename`：可选。下载文件名，默认 `Resume-<id>.pdf`。
   - 响应：
     - 成功 200：`{ "url": "https://presigned-url" }`
     - 409 PDF 尚未生成；400/404/500 视查询结果
@@ -283,12 +287,12 @@ API 基础前缀：`/v1`
 
 | 方法 | 路径 | 描述 | 鉴权 | 调用的方法 |
 | - | - | - | - | - |
-| GET | `/v1/resume/print/:id?internal_token=<secret>` | 返回简历渲染所需 JSON（内联图像预签名） | `internal_token` | `ResumeHandler.GetPrintResumeData`（backend/internal/api/resume_handler.go:465） |
-| GET | `/v1/templates/print/:id?internal_token=<secret>` | 返回模板渲染所需 JSON（内联图像预签名） | `internal_token` | `TemplateHandler.GetPrintTemplateData`（backend/internal/api/template_handler.go:275） |
+| GET | `/v1/resume/print/:id` | 返回简历渲染所需 JSON（内联图像预签名） | `X-Internal-Secret` | `ResumeHandler.GetPrintResumeData`（backend/internal/api/resume_handler.go:495） |
+| GET | `/v1/templates/print/:id` | 返回模板渲染所需 JSON（内联图像预签名） | `X-Internal-Secret` | `TemplateHandler.GetPrintTemplateData`（backend/internal/api/template_handler.go:273） |
 
 请求与响应：
 
-- 鉴权：查询参数 `internal_token` 必须与环境变量 `INTERNAL_API_SECRET` 完全匹配
+- 鉴权：请求 Header `X-Internal-Secret` 必须与环境变量 `INTERNAL_API_SECRET` 完全匹配
 - 响应：
   - 成功 200：返回 `resume.Content` 结构：
     ```json
@@ -299,7 +303,7 @@ API 基础前缀：`/v1`
       ]
     }
     ```
-  - 401 内部令牌缺失/不匹配；400 ID 非法；404 未找到；500 服务器错误
+  - 401 内部密钥缺失/不匹配；400 ID 非法；404 未找到；500 服务器错误
   - 失败体示例：`{ "error": "unauthorized" }`
 
 ---
@@ -322,7 +326,7 @@ API 基础前缀：`/v1`
 消息示例（由 Worker 发布，原样透传）：
 
 ```json
-{ "event": "pdf_ready", "resume_id": 123, "url": "https://presigned-url" }
+{ "status": "completed", "resume_id": 123 }
 ```
 
 ---

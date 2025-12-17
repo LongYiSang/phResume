@@ -109,7 +109,10 @@ func (h *TemplatePreviewHandler) ProcessTask(ctx context.Context, t *asynq.Task)
 
 	if err := h.db.WithContext(ctx).
 		Model(&template).
-		Update("preview_image_url", url).Error; err != nil {
+		Updates(map[string]any{
+			"preview_image_url":  url,
+			"preview_object_key": objectName,
+		}).Error; err != nil {
 		log.Error("update template preview url failed", slog.Any("error", err))
 		return err
 	}

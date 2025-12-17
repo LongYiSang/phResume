@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
 	"strings"
 	"time"
@@ -164,4 +165,67 @@ func (c *Client) ListObjects(ctx context.Context, prefix string, limit int) ([]O
 		}
 	}
 	return result, nil
+}
+
+// DeleteObject 删除指定对象。
+// 若对象不存在会被视为成功（幂等）。
+func (c *Client) DeleteObject(ctx context.Context, objectKey string) error {
+	objectKey = strings.TrimSpace(objectKey)
+	if objectKey == "" {
+		return nil
+	}
+	if err := c.internalClient.RemoveObject(ctx, c.bucketName, objectKey, minio.RemoveObjectOptions{}); err != nil {
+		reason := strings.ToLower(err.Error())
+		if strings.Contains(reason, "nosuchkey") || strings.Contains(reason, "not found") {
+			return nil
+		}
+		return fmt.Errorf("remove object %q: %w", objectKey, err)
+	}
+	return nil
+}
+
+// DeletePrefix 删除指定前缀下的所有对象。
+// 若某些对象已不存在会被忽略；其余错误会聚合返回。
+func (c *Client) DeletePrefix(ctx context.Context, prefix string) error {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		return nil
+	}
+
+	objCh := c.internalClient.ListObjects(ctx, c.bucketName, minio.ListObjectsOptions{
+		Prefix:    prefix,
+		Recursive: true,
+	})
+
+	keys := make([]string, 0, 32)
+	for object := range objCh {
+		if object.Err != nil {
+			return fmt.Errorf("list objects under %q: %w", prefix, object.Err)
+		}
+		if strings.TrimSpace(object.Key) != "" {
+			keys = append(keys, object.Key)
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+
+	errs := make([]error, 0)
+	for _, key := range keys {
+		if err := c.DeleteObject(ctx, key); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) == 0 {
+		return nil
+	}
+	if len(errs) == 1 {
+		return errs[0]
+	}
+
+	slog.Default().Error("delete minio objects under prefix failed",
+		slog.String("prefix", prefix),
+		slog.Int("failed_count", len(errs)),
+	)
+	return fmt.Errorf("delete objects under %q: %d errors", prefix, len(errs))
 }
