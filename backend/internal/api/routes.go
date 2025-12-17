@@ -27,12 +27,13 @@ func RegisterRoutes(
 	clamdAddr string,
 	maxResumes int,
 	maxTemplates int,
+	maxAssetsPerUser int,
+	maxUploadsPerDay int,
 	allowedOrigins []string,
 	loginRateLimitPerHour int,
 	loginLockThreshold int,
 	loginLockTTL time.Duration,
 	pdfRateLimitPerHour int,
-	uploadRateLimitPerHour int,
 	uploadMaxBytes int,
 	uploadMIMEWhitelist []string,
 	cookieDomain string,
@@ -58,7 +59,7 @@ func RegisterRoutes(
 	)
 	wsHandler := NewWsHandler(redisClient, authService, logger, allowedOrigins)
 	authMiddleware := middleware.AuthMiddleware(authService)
-	assetHandler := NewAssetHandler(storageClient, logger, clamdAddr, redisClient, uploadRateLimitPerHour, uploadMaxBytes, uploadMIMEWhitelist)
+	assetHandler := NewAssetHandler(db, storageClient, logger, clamdAddr, redisClient, maxAssetsPerUser, maxUploadsPerDay, uploadMaxBytes, uploadMIMEWhitelist)
 	templateHandler := NewTemplateHandler(db, asynqClient, storageClient, internalAPISecret, maxTemplates)
 
 	v1 := router.Group("/v1")
@@ -96,6 +97,7 @@ func RegisterRoutes(
 			assetGroup.GET("", assetHandler.ListAssets)
 			assetGroup.POST("/upload", assetHandler.UploadAsset)
 			assetGroup.GET("/view", assetHandler.GetAssetURL)
+			assetGroup.DELETE("", assetHandler.DeleteAsset)
 		}
 
 		templatesGroup := v1.Group("/templates")

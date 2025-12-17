@@ -32,7 +32,7 @@ func main() {
 	}
 	log.Println("database connection ready for worker")
 
-	if err := db.AutoMigrate(&database.User{}, &database.Resume{}, &database.Template{}); err != nil {
+	if err := db.AutoMigrate(&database.User{}, &database.Resume{}, &database.Template{}, &database.Asset{}); err != nil {
 		log.Fatalf("auto migrate: %v", err)
 	}
 	log.Println("worker database migrated")

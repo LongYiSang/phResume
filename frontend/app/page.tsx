@@ -25,6 +25,7 @@ import { AssetsPanel } from "@/components/AssetsPanel";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { useAuth } from "@/context/AuthContext";
 import { ActiveEditorProvider } from "@/context/ActiveEditorContext";
+import { useAlertModal } from "@/context/AlertModalContext";
 import { useAuthFetch, friendlyMessageForStatus } from "@/hooks/useAuthFetch";
 import { Move } from "lucide-react";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button } from "@heroui/react";
@@ -188,6 +189,7 @@ export default function Home() {
   const router = useRouter();
   const { accessToken, setAccessToken, isAuthenticated, isCheckingAuth } = useAuth();
   const authFetch = useAuthFetch();
+  const { showAlert } = useAlertModal();
   const [title, setTitle] = useState("");
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
   const [savedResumeId, setSavedResumeId] = useState<number | null>(null);
@@ -1401,6 +1403,19 @@ export default function Home() {
         });
 
         if (!response.ok) {
+          if (process.env.NODE_ENV !== "production") {
+            console.error("图片上传失败", {
+              status: response.status,
+            });
+          }
+          if (response.status === 403) {
+            showAlert({
+              title: "上传上限",
+              message: `您已达到最大上传数量限制（${4}张），请一段时间后再尝试上传`,
+            });
+            setError(null);
+            throw new Error("asset limit reached");
+          }
           setError(friendlyMessageForStatus(response.status, "upload"));
           throw new Error("upload failed");
         }
@@ -1415,14 +1430,18 @@ export default function Home() {
         appendImageItem(objectKey);
         setAssetPanelRefreshToken((token) => token + 1);
       } catch (err) {
-        console.error("图片上传失败", err);
-        setError((prev) => prev ?? "图片上传失败，请重试");
+        if (process.env.NODE_ENV !== "production") {
+          console.error("图片上传失败", err);
+        }
+        if (String((err as Error | undefined)?.message ?? "") !== "asset limit reached") {
+          setError((prev) => prev ?? "图片上传失败，请重试");
+        }
       } finally {
         setIsUploadingAsset(false);
         event.target.value = "";
       }
     },
-    [authFetch, isAuthenticated, appendImageItem],
+    [authFetch, isAuthenticated, appendImageItem, showAlert],
   );
 
   const handleSelectAssetFromPanel = useCallback(

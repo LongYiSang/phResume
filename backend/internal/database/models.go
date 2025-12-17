@@ -40,3 +40,11 @@ type Template struct {
 	UserID           uint           `gorm:"index"`
 	User             User           `gorm:"constraint:OnDelete:CASCADE"`
 }
+
+type Asset struct {
+	gorm.Model
+	UserID      uint   `gorm:"index;not null"`
+	ObjectKey   string `gorm:"uniqueIndex;size:512;not null"`
+	ContentType string `gorm:"size:128"`
+	Size        int64
+}

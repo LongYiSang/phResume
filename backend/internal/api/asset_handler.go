@@ -1,43 +1,120 @@
 package api
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	stdhttp "net/http"
-	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dutchcoders/go-clamd"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/minio/minio-go/v7"
 	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 
+	"phResume/internal/api/middleware"
+	"phResume/internal/database"
 	"phResume/internal/storage"
 )
 
+type assetStore interface {
+	CountByUser(ctx context.Context, userID uint) (int64, error)
+	ListByUser(ctx context.Context, userID uint, limit int) ([]database.Asset, error)
+	Create(ctx context.Context, asset database.Asset) error
+	FindByUserAndKey(ctx context.Context, userID uint, objectKey string) (database.Asset, error)
+	DeleteByID(ctx context.Context, id uint) error
+}
+
+type assetStorage interface {
+	UploadFile(ctx context.Context, objectName string, reader io.Reader, size int64, contentType string) (*minio.UploadInfo, error)
+	GeneratePresignedURL(ctx context.Context, objectKey string, expiry time.Duration) (string, error)
+	DeleteObject(ctx context.Context, objectKey string) error
+}
+
+type assetCounter interface {
+	Incr(ctx context.Context, key string) *redis.IntCmd
+	Expire(ctx context.Context, key string, expiration time.Duration) *redis.BoolCmd
+	Get(ctx context.Context, key string) *redis.StringCmd
+}
+
+type gormAssetStore struct {
+	db *gorm.DB
+}
+
+func newGormAssetStore(db *gorm.DB) assetStore {
+	return &gormAssetStore{db: db}
+}
+
+func (s *gormAssetStore) CountByUser(ctx context.Context, userID uint) (int64, error) {
+	var count int64
+	if err := s.db.WithContext(ctx).
+		Model(&database.Asset{}).
+		Where("user_id = ?", userID).
+		Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (s *gormAssetStore) ListByUser(ctx context.Context, userID uint, limit int) ([]database.Asset, error) {
+	var assets []database.Asset
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("created_at desc").
+		Limit(limit).
+		Find(&assets).Error; err != nil {
+		return nil, err
+	}
+	return assets, nil
+}
+
+func (s *gormAssetStore) Create(ctx context.Context, asset database.Asset) error {
+	return s.db.WithContext(ctx).Create(&asset).Error
+}
+
+func (s *gormAssetStore) FindByUserAndKey(ctx context.Context, userID uint, objectKey string) (database.Asset, error) {
+	var asset database.Asset
+	err := s.db.WithContext(ctx).
+		Where("user_id = ? AND object_key = ?", userID, objectKey).
+		First(&asset).Error
+	return asset, err
+}
+
+func (s *gormAssetStore) DeleteByID(ctx context.Context, id uint) error {
+	return s.db.WithContext(ctx).Delete(&database.Asset{}, id).Error
+}
+
 // AssetHandler 负责处理资产上传与访问。
 type AssetHandler struct {
-	Storage                *storage.Client
-	Logger                 *slog.Logger
-	ClamdAddr              string
-	MaxBytes               int
-	MIMEWhitelist          []string
-	RedisClient            *redis.Client
-	uploadRateLimitPerHour int
+	store            assetStore
+	Storage          assetStorage
+	Logger           *slog.Logger
+	ClamdAddr        string
+	MaxBytes         int
+	MIMEWhitelist    []string
+	RedisClient      assetCounter
+	maxAssetsPerUser int
+	maxUploadsPerDay int
 }
 
 // NewAssetHandler 返回 AssetHandler 实例。
-func NewAssetHandler(storageClient *storage.Client, logger *slog.Logger, clamdAddr string, redisClient *redis.Client, uploadRateLimitPerHour int, maxBytes int, mimeWhitelist []string) *AssetHandler {
+func NewAssetHandler(db *gorm.DB, storageClient *storage.Client, logger *slog.Logger, clamdAddr string, redisClient *redis.Client, maxAssetsPerUser int, maxUploadsPerDay int, maxBytes int, mimeWhitelist []string) *AssetHandler {
 	return &AssetHandler{
-		Storage:                storageClient,
-		Logger:                 logger,
-		ClamdAddr:              clamdAddr,
-		MaxBytes:               maxBytes,
-		MIMEWhitelist:          mimeWhitelist,
-		RedisClient:            redisClient,
-		uploadRateLimitPerHour: uploadRateLimitPerHour,
+		store:            newGormAssetStore(db),
+		Storage:          storageClient,
+		Logger:           logger,
+		ClamdAddr:        clamdAddr,
+		MaxBytes:         maxBytes,
+		MIMEWhitelist:    mimeWhitelist,
+		RedisClient:      redisClient,
+		maxAssetsPerUser: maxAssetsPerUser,
+		maxUploadsPerDay: maxUploadsPerDay,
 	}
 }
 
@@ -49,14 +126,29 @@ func (h *AssetHandler) UploadAsset(c *gin.Context) {
 		return
 	}
 
-	// 每用户每小时上传 2 次
-	window := time.Now().UTC().Format("2006010215")
-	rateKey := fmt.Sprintf("rate:upload:%d:%s", userID, window)
-	count, _ := h.RedisClient.Incr(c.Request.Context(), rateKey).Result()
-	if count == 1 {
-		_ = h.RedisClient.Expire(c.Request.Context(), rateKey, time.Hour).Err()
+	ctx := c.Request.Context()
+	logger := middleware.LoggerFromContext(c).With(
+		slog.Uint64("user_id", uint64(userID)),
+	)
+
+	existingCount, err := h.store.CountByUser(ctx, userID)
+	if err != nil {
+		logger.Error("count assets failed", slog.Any("error", err))
+		Internal(c, "failed to count assets")
+		return
 	}
-	if count > int64(h.uploadRateLimitPerHour) {
+	if h.maxAssetsPerUser > 0 && existingCount >= int64(h.maxAssetsPerUser) {
+		Forbidden(c, "asset limit reached")
+		return
+	}
+
+	dayWindow := time.Now().UTC().Format("20060102")
+	rateKey := fmt.Sprintf("rate:upload:day:%d:%s", userID, dayWindow)
+	count, _ := h.RedisClient.Incr(ctx, rateKey).Result()
+	if count == 1 {
+		_ = h.RedisClient.Expire(ctx, rateKey, 24*time.Hour).Err()
+	}
+	if h.maxUploadsPerDay > 0 && count > int64(h.maxUploadsPerDay) {
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
 		return
 	}
@@ -76,7 +168,7 @@ func (h *AssetHandler) UploadAsset(c *gin.Context) {
 
 	fileReader, err := file.Open()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to open file"})
+		Internal(c, "failed to open file")
 		return
 	}
 
@@ -138,8 +230,23 @@ func (h *AssetHandler) UploadAsset(c *gin.Context) {
 	objectKey := fmt.Sprintf("user-assets/%d/%s%s", userID, uuid.NewString(), ext)
 	contentType := sniffed
 
-	if _, err := h.Storage.UploadFile(c.Request.Context(), objectKey, fileReader, file.Size, contentType); err != nil {
-		h.Logger.Error("upload file", slog.String("error", err.Error()))
+	if _, err := h.Storage.UploadFile(ctx, objectKey, fileReader, file.Size, contentType); err != nil {
+		logger.Error("upload file failed", slog.String("object_key", objectKey), slog.Any("error", err))
+		Internal(c, "failed to upload file")
+		return
+	}
+
+	asset := database.Asset{
+		UserID:      userID,
+		ObjectKey:   objectKey,
+		ContentType: contentType,
+		Size:        file.Size,
+	}
+	if err := h.store.Create(ctx, asset); err != nil {
+		if delErr := h.Storage.DeleteObject(ctx, objectKey); delErr != nil {
+			logger.Error("rollback delete object failed", slog.String("object_key", objectKey), slog.Any("error", delErr))
+		}
+		logger.Error("create asset record failed", slog.String("object_key", objectKey), slog.Any("error", err))
 		Internal(c, "failed to upload file")
 		return
 	}
@@ -155,6 +262,8 @@ func (h *AssetHandler) ListAssets(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
 	limitStr := c.DefaultQuery("limit", "60")
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil || limit <= 0 {
@@ -164,34 +273,47 @@ func (h *AssetHandler) ListAssets(c *gin.Context) {
 		limit = 200
 	}
 
-	prefix := fmt.Sprintf("user-assets/%d/", userID)
-	objects, err := h.Storage.ListObjects(c.Request.Context(), prefix, limit)
+	logger := middleware.LoggerFromContext(c).With(slog.Uint64("user_id", uint64(userID)))
+	assets, err := h.store.ListByUser(ctx, userID, limit)
 	if err != nil {
-		h.Logger.Error("list assets", slog.String("error", err.Error()))
+		logger.Error("list assets failed", slog.Any("error", err))
 		Internal(c, "failed to list assets")
 		return
 	}
 
-	sort.Slice(objects, func(i, j int) bool {
-		return objects[i].LastModified.After(objects[j].LastModified)
-	})
-
-	items := make([]gin.H, 0, len(objects))
-	for _, obj := range objects {
-		url, err := h.Storage.GeneratePresignedURL(c.Request.Context(), obj.Key, 10*time.Minute)
+	assetCount := int64(len(assets))
+	items := make([]gin.H, 0, len(assets))
+	for _, a := range assets {
+		url, err := h.Storage.GeneratePresignedURL(ctx, a.ObjectKey, 10*time.Minute)
 		if err != nil {
-			h.Logger.Error("generate asset url", slog.String("objectKey", obj.Key), slog.String("error", err.Error()))
+			logger.Error("generate asset url failed", slog.String("object_key", a.ObjectKey), slog.Any("error", err))
 			continue
 		}
 		items = append(items, gin.H{
-			"objectKey":    obj.Key,
+			"objectKey":    a.ObjectKey,
 			"previewUrl":   url,
-			"size":         obj.Size,
-			"lastModified": obj.LastModified,
+			"size":         a.Size,
+			"lastModified": a.CreatedAt,
 		})
 	}
 
-	c.JSON(http.StatusOK, gin.H{"items": items})
+	todayKey := fmt.Sprintf("rate:upload:day:%d:%s", userID, time.Now().UTC().Format("20060102"))
+	todayUploads := int64(0)
+	if value, err := h.RedisClient.Get(ctx, todayKey).Result(); err == nil {
+		if parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64); err == nil {
+			todayUploads = parsed
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items": items,
+		"stats": gin.H{
+			"assetCount":       assetCount,
+			"maxAssets":        h.maxAssetsPerUser,
+			"todayUploads":     todayUploads,
+			"maxUploadsPerDay": h.maxUploadsPerDay,
+		},
+	})
 }
 
 // GetAssetURL 返回资产的临时预签名 URL。
@@ -202,18 +324,23 @@ func (h *AssetHandler) GetAssetURL(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
 	objectKey := c.Query("key")
 	if objectKey == "" {
 		BadRequest(c, "missing key")
 		return
 	}
-
+	objectKey = strings.TrimSpace(objectKey)
 	if !isValidUserAssetObjectKey(userID, objectKey) {
 		Forbidden(c, "access denied")
 		return
 	}
-
-	signedURL, err := h.Storage.GeneratePresignedURL(c.Request.Context(), objectKey, 15*time.Minute)
+	if _, err := h.store.FindByUserAndKey(ctx, userID, objectKey); err != nil {
+		Forbidden(c, "access denied")
+		return
+	}
+	signedURL, err := h.Storage.GeneratePresignedURL(ctx, objectKey, 15*time.Minute)
 	if err != nil {
 		h.Logger.Error("generate presigned url", slog.String("error", err.Error()))
 		Internal(c, "failed to generate url")
@@ -221,4 +348,44 @@ func (h *AssetHandler) GetAssetURL(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"url": signedURL})
+}
+
+func (h *AssetHandler) DeleteAsset(c *gin.Context) {
+	userID, ok := userIDFromContext(c)
+	if !ok {
+		AbortUnauthorized(c)
+		return
+	}
+
+	ctx := c.Request.Context()
+	logger := middleware.LoggerFromContext(c).With(slog.Uint64("user_id", uint64(userID)))
+	objectKey := strings.TrimSpace(c.Query("key"))
+	if objectKey == "" {
+		BadRequest(c, "missing key")
+		return
+	}
+	if !isValidUserAssetObjectKey(userID, objectKey) {
+		Forbidden(c, "access denied")
+		return
+	}
+
+	asset, err := h.store.FindByUserAndKey(ctx, userID, objectKey)
+	if err != nil {
+		Forbidden(c, "access denied")
+		return
+	}
+
+	if err := h.Storage.DeleteObject(ctx, objectKey); err != nil {
+		logger.Error("delete object failed", slog.String("object_key", objectKey), slog.Any("error", err))
+		Internal(c, "failed to delete asset")
+		return
+	}
+
+	if err := h.store.DeleteByID(ctx, asset.ID); err != nil {
+		logger.Error("delete asset record failed", slog.String("object_key", objectKey), slog.Any("error", err))
+		Internal(c, "failed to delete asset")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "asset deleted"})
 }

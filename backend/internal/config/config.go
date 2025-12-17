@@ -39,7 +39,8 @@ type APIConfig struct {
 	UploadMIMEWhitelistRaw string        `mapstructure:"upload_mime_whitelist"`
 	UploadMIMEWhitelist    []string      `mapstructure:"-"`
 	PdfRateLimitPerHour    int           `mapstructure:"pdf_rate_limit_per_hour"`
-	UploadRateLimitPerHour int           `mapstructure:"upload_rate_limit_per_hour"`
+	MaxAssetsPerUser       int           `mapstructure:"max_assets_per_user"`
+	MaxUploadsPerDay       int           `mapstructure:"max_uploads_per_day"`
 	CookieDomain           string        `mapstructure:"cookie_domain"`
 }
 
@@ -198,7 +199,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("api.upload_max_bytes", 5*1024*1024)
 	v.SetDefault("api.upload_mime_whitelist", "image/png,image/jpeg,image/webp")
 	v.SetDefault("api.pdf_rate_limit_per_hour", 3)
-	v.SetDefault("api.upload_rate_limit_per_hour", 2)
+	v.SetDefault("api.max_assets_per_user", 4)
+	v.SetDefault("api.max_uploads_per_day", 4)
 	v.SetDefault("api.cookie_domain", "")
 	v.SetDefault("database.host", "localhost")
 	v.SetDefault("database.port", 5432)
@@ -227,46 +229,47 @@ func setDefaults(v *viper.Viper) {
 
 func bindEnv(v *viper.Viper) error {
 	mappings := map[string][]string{
-		"api.port":                       {"API_PORT"},
-		"api.max_resumes":                {"API_MAX_RESUMES"},
-		"api.max_templates":              {"API_MAX_TEMPLATES"},
-		"api.login_rate_limit_per_hour":  {"API_LOGIN_RATE_LIMIT_PER_HOUR"},
-		"api.login_lock_threshold":       {"API_LOGIN_LOCK_THRESHOLD"},
-		"api.login_lock_ttl":             {"API_LOGIN_LOCK_TTL"},
-		"api.allowed_origins":            {"API_ALLOWED_ORIGINS"},
-		"api.upload_max_bytes":           {"API_UPLOAD_MAX_BYTES"},
-		"api.upload_mime_whitelist":      {"API_UPLOAD_MIME_WHITELIST"},
-		"api.pdf_rate_limit_per_hour":    {"API_PDF_RATE_LIMIT_PER_HOUR"},
-		"api.upload_rate_limit_per_hour": {"API_UPLOAD_RATE_LIMIT_PER_HOUR"},
-		"api.cookie_domain":              {"API_COOKIE_DOMAIN"},
-		"database.host":                  {"DATABASE_HOST"},
-		"database.port":                  {"DATABASE_PORT"},
-		"database.name":                  {"POSTGRES_DB", "DB_NAME"},
-		"database.user":                  {"POSTGRES_USER", "DB_USER"},
-		"database.password":              {"POSTGRES_PASSWORD", "DB_PASSWORD"},
-		"database.sslmode":               {"DATABASE_SSLMODE"},
-		"redis.host":                     {"REDIS_HOST"},
-		"redis.port":                     {"REDIS_PORT"},
-		"minio.endpoint":                 {"MINIO_ENDPOINT"},
-		"minio.access_key_id":            {"MINIO_ACCESS_KEY_ID", "MINIO_ROOT_USER"},
-		"minio.secret_access_key":        {"MINIO_SECRET_ACCESS_KEY", "MINIO_ROOT_PASSWORD"},
-		"minio.use_ssl":                  {"MINIO_USE_SSL"},
-		"minio.bucket":                   {"MINIO_BUCKET"},
-		"minio.public_endpoint":          {"MINIO_PUBLIC_ENDPOINT"},
-		"minio.region":                   {"MINIO_REGION"},
-		"minio.bucket_lookup":            {"MINIO_BUCKET_LOOKUP"},
-		"minio.auto_create_bucket":       {"MINIO_AUTO_CREATE_BUCKET"},
-		"jwt.private_key":                {"JWT_PRIVATE_KEY"},
-		"jwt.public_key":                 {"JWT_PUBLIC_KEY"},
-		"jwt.access_token_ttl":           {"JWT_ACCESS_TOKEN_TTL"},
-		"jwt.refresh_token_ttl":          {"JWT_REFRESH_TOKEN_TTL"},
-		"clamav.host":                    {"CLAMAV_HOST"},
-		"clamav.port":                    {"CLAMAV_PORT"},
-		"worker.internal_api_base_url":   {"WORKER_INTERNAL_API_BASE_URL"},
-		"worker.frontend_base_url":       {"WORKER_FRONTEND_BASE_URL"},
-		"worker.metrics_addr":            {"WORKER_METRICS_ADDR"},
-		"worker.concurrency":             {"WORKER_CONCURRENCY"},
-		"internal_api_secret":            {"INTERNAL_API_SECRET"},
+		"api.port":                      {"API_PORT"},
+		"api.max_resumes":               {"API_MAX_RESUMES"},
+		"api.max_templates":             {"API_MAX_TEMPLATES"},
+		"api.login_rate_limit_per_hour": {"API_LOGIN_RATE_LIMIT_PER_HOUR"},
+		"api.login_lock_threshold":      {"API_LOGIN_LOCK_THRESHOLD"},
+		"api.login_lock_ttl":            {"API_LOGIN_LOCK_TTL"},
+		"api.allowed_origins":           {"API_ALLOWED_ORIGINS"},
+		"api.upload_max_bytes":          {"API_UPLOAD_MAX_BYTES"},
+		"api.upload_mime_whitelist":     {"API_UPLOAD_MIME_WHITELIST"},
+		"api.pdf_rate_limit_per_hour":   {"API_PDF_RATE_LIMIT_PER_HOUR"},
+		"api.max_assets_per_user":       {"API_MAX_ASSETS_PER_USER"},
+		"api.max_uploads_per_day":       {"API_MAX_UPLOADS_PER_DAY"},
+		"api.cookie_domain":             {"API_COOKIE_DOMAIN"},
+		"database.host":                 {"DATABASE_HOST"},
+		"database.port":                 {"DATABASE_PORT"},
+		"database.name":                 {"POSTGRES_DB", "DB_NAME"},
+		"database.user":                 {"POSTGRES_USER", "DB_USER"},
+		"database.password":             {"POSTGRES_PASSWORD", "DB_PASSWORD"},
+		"database.sslmode":              {"DATABASE_SSLMODE"},
+		"redis.host":                    {"REDIS_HOST"},
+		"redis.port":                    {"REDIS_PORT"},
+		"minio.endpoint":                {"MINIO_ENDPOINT"},
+		"minio.access_key_id":           {"MINIO_ACCESS_KEY_ID", "MINIO_ROOT_USER"},
+		"minio.secret_access_key":       {"MINIO_SECRET_ACCESS_KEY", "MINIO_ROOT_PASSWORD"},
+		"minio.use_ssl":                 {"MINIO_USE_SSL"},
+		"minio.bucket":                  {"MINIO_BUCKET"},
+		"minio.public_endpoint":         {"MINIO_PUBLIC_ENDPOINT"},
+		"minio.region":                  {"MINIO_REGION"},
+		"minio.bucket_lookup":           {"MINIO_BUCKET_LOOKUP"},
+		"minio.auto_create_bucket":      {"MINIO_AUTO_CREATE_BUCKET"},
+		"jwt.private_key":               {"JWT_PRIVATE_KEY"},
+		"jwt.public_key":                {"JWT_PUBLIC_KEY"},
+		"jwt.access_token_ttl":          {"JWT_ACCESS_TOKEN_TTL"},
+		"jwt.refresh_token_ttl":         {"JWT_REFRESH_TOKEN_TTL"},
+		"clamav.host":                   {"CLAMAV_HOST"},
+		"clamav.port":                   {"CLAMAV_PORT"},
+		"worker.internal_api_base_url":  {"WORKER_INTERNAL_API_BASE_URL"},
+		"worker.frontend_base_url":      {"WORKER_FRONTEND_BASE_URL"},
+		"worker.metrics_addr":           {"WORKER_METRICS_ADDR"},
+		"worker.concurrency":            {"WORKER_CONCURRENCY"},
+		"internal_api_secret":           {"INTERNAL_API_SECRET"},
 	}
 
 	for key, envs := range mappings {
@@ -307,8 +310,11 @@ func validate(cfg Config) error {
 	if cfg.API.PdfRateLimitPerHour <= 0 {
 		return errors.New("api pdf rate limit per hour must be positive")
 	}
-	if cfg.API.UploadRateLimitPerHour <= 0 {
-		return errors.New("api upload rate limit per hour must be positive")
+	if cfg.API.MaxAssetsPerUser <= 0 {
+		return errors.New("api max assets per user must be positive")
+	}
+	if cfg.API.MaxUploadsPerDay <= 0 {
+		return errors.New("api max uploads per day must be positive")
 	}
 	if cfg.Database.Host == "" {
 		return errors.New("database host is required")

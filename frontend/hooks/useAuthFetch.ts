@@ -61,6 +61,7 @@ export function friendlyMessageForStatus(status: number, kind?: "upload" | "pdf"
     if (status === 429) return "上传过于频繁，请稍后再试";
     if (status === 413) return "文件过大，最大 5MB";
     if (status === 400) return "不支持的文件类型，请使用 PNG/JPEG/WebP";
+    if (status === 403) return "图片数量已达上限，请先删除后再上传";
     return "图片上传失败，请重试";
   }
   if (k === "pdf") {
