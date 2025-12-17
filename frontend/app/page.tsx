@@ -1603,7 +1603,7 @@ export default function Home() {
       
 
       <div className="relative">
-        <div className="fixed left-6 top-1/2 -translate-y-1/2 z-40">
+        <div className="fixed left-6 inset-y-0 z-40 flex items-center">
           <Dock
             onAddText={handleAddText}
             onAddSectionTitle={handleAddSectionTitle}
