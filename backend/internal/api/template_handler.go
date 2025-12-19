@@ -1,10 +1,12 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
@@ -13,7 +15,6 @@ import (
 
 	"phResume/internal/api/middleware"
 	"phResume/internal/database"
-	"phResume/internal/resume"
 	"phResume/internal/storage"
 	"phResume/internal/tasks"
 )
@@ -140,8 +141,31 @@ func (h *TemplateHandler) DeleteTemplate(c *gin.Context) {
 		return
 	}
 
-	if err := h.db.WithContext(c.Request.Context()).
-		Delete(&database.Template{}, model.ID).Error; err != nil {
+	ctx := c.Request.Context()
+	logger := middleware.LoggerFromContext(c).With(
+		slog.Uint64("user_id", uint64(userID)),
+		slog.Uint64("template_id", uint64(model.ID)),
+	)
+
+	previewKey := strings.TrimSpace(model.PreviewObjectKey)
+	previewPrefix := fmt.Sprintf("thumbnails/template/%d/", model.ID)
+
+	if previewKey != "" {
+		if err := h.storage.DeleteObject(ctx, previewKey); err != nil {
+			logger.Error("delete template preview object failed", slog.String("object_key", previewKey), slog.Any("error", err))
+			Internal(c, "failed to delete template preview")
+			return
+		}
+	} else {
+		if err := h.storage.DeletePrefix(ctx, previewPrefix); err != nil {
+			logger.Error("delete template preview prefix failed", slog.String("prefix", previewPrefix), slog.Any("error", err))
+			Internal(c, "failed to delete template preview")
+			return
+		}
+	}
+
+	if err := h.db.WithContext(ctx).Delete(&database.Template{}, model.ID).Error; err != nil {
+		logger.Error("delete template record failed", slog.Any("error", err))
 		Internal(c, "failed to delete template")
 		return
 	}
@@ -289,13 +313,8 @@ func (h *TemplateHandler) GetPrintTemplateData(c *gin.Context) {
 		return
 	}
 
-	var content resume.Content
-	if err := json.Unmarshal(templateModel.Content, &content); err != nil {
-		Internal(c, "failed to decode template")
-		return
-	}
-
-	if err := inlineContentImages(ctx, h.storage, templateModel.UserID, &content); err != nil {
+	printData, removed, err := BuildPrintData(ctx, h.storage, templateModel.UserID, templateModel.Content)
+	if err != nil {
 		if status, ok := statusFromInlineError(err); ok {
 			Error(c, status, err.Error())
 			return
@@ -304,5 +323,11 @@ func (h *TemplateHandler) GetPrintTemplateData(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, content)
+	log := middleware.LoggerFromContext(c).With(
+		slog.Int("template_id", int(templateModel.ID)),
+		slog.Uint64("user_id", uint64(templateModel.UserID)),
+	)
+	LogRemovedImageItems(log, removed)
+
+	c.JSON(http.StatusOK, printData)
 }

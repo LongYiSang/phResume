@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { AuthProvider } from "@/context/AuthContext";
 import Providers from "@/app/providers";
 import { ChangePasswordGate } from "@/components/ChangePasswordGate";
+import { AlertModalProvider } from "@/context/AlertModalContext";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? "";
@@ -11,16 +12,21 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/print") || pathname.startsWith("/print-template");
 
   if (isPrintRoute) {
-    return <Providers>{children}</Providers>;
+    return (
+      <AlertModalProvider>
+        <Providers>{children}</Providers>
+      </AlertModalProvider>
+    );
   }
 
   return (
     <AuthProvider>
-      <Providers>
-        {children}
-        <ChangePasswordGate />
-      </Providers>
+      <AlertModalProvider>
+        <Providers>
+          {children}
+          <ChangePasswordGate />
+        </Providers>
+      </AlertModalProvider>
     </AuthProvider>
   );
 }
-

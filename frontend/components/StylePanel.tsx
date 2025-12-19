@@ -6,6 +6,7 @@ import { Select, SelectItem, Slider, Input, Button, type Selection } from "@hero
 
 import { Droplets, Pipette } from "lucide-react";
 import { API_ROUTES } from "@/lib/api-routes";
+import { useAlertModal } from "@/context/AlertModalContext";
 
 type StylePanelProps = {
   settings: LayoutSettings;
@@ -209,6 +210,7 @@ export function StylePanel({
   const [isDraggingFocus, setIsDraggingFocus] = useState(false);
   const previewRef = useRef<HTMLDivElement | null>(null);
   const customColorInputRef = useRef<HTMLInputElement | null>(null);
+  const { showAlert } = useAlertModal();
 
   const colorInputValue = useMemo(() => {
     if (!selectedItemBackgroundColor) {
@@ -228,16 +230,33 @@ export function StylePanel({
       }
       try {
         const resp = await fetch(API_ROUTES.ASSETS.view(selectedItemContent));
-        if (!resp.ok) return;
+        if (!resp.ok) {
+          if (process.env.NODE_ENV !== "production") {
+            console.error("获取图片预览 URL 失败", {
+              objectKey: selectedItemContent,
+              status: resp.status,
+            });
+          }
+          if (resp.status === 403 || resp.status === 404) {
+            showAlert({
+              title: "文件缺失",
+              message: "简历中的部分文件已被删除，请重新上传相关文件",
+            });
+          }
+          return;
+        }
         const data = await resp.json();
         if (mounted) setImagePreviewURL(typeof data?.url === "string" ? data.url : null);
-      } catch {
+      } catch (err) {
+        if (process.env.NODE_ENV !== "production") {
+          console.error("获取图片预览 URL 失败", err);
+        }
         if (mounted) setImagePreviewURL(null);
       }
     }
     fetchURL();
     return () => { mounted = false; };
-  }, [isImageSelected, selectedItemContent]);
+  }, [isImageSelected, selectedItemContent, showAlert]);
 
   const handlePreviewMouseDown = (e: MouseEvent<HTMLDivElement>) => {
     if (!previewRef.current) return;

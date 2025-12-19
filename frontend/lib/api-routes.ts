@@ -47,6 +47,12 @@ export const API_ROUTES = {
       const path = `${API_ROOT}/assets/view?${search.toString()}`;
       return joinUrl(API_BASE, path);
     },
+    delete: (key: string) => {
+      const search = new URLSearchParams();
+      search.set("key", key);
+      const path = `${API_ROOT}/assets?${search.toString()}`;
+      return joinUrl(API_BASE, path);
+    },
   },
   TEMPLATES: {
     list: () => joinUrl(API_BASE, `${API_ROOT}/templates`),

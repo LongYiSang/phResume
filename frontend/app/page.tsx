@@ -25,6 +25,7 @@ import { AssetsPanel } from "@/components/AssetsPanel";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { useAuth } from "@/context/AuthContext";
 import { ActiveEditorProvider } from "@/context/ActiveEditorContext";
+import { useAlertModal } from "@/context/AlertModalContext";
 import { useAuthFetch, friendlyMessageForStatus } from "@/hooks/useAuthFetch";
 import { Move } from "lucide-react";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button } from "@heroui/react";
@@ -35,6 +36,7 @@ import {
   normalizeResumeContent,
 } from "@/utils/resume";
 import { API_ROUTES } from "@/lib/api-routes";
+import { ERROR_CODES, messageForErrorCode, titleForErrorCode } from "@/lib/error-codes";
 import { applyOpacityToColor, extractBackgroundStyle } from "@/utils/color";
 import type {
   LayoutSettings,
@@ -188,6 +190,7 @@ export default function Home() {
   const router = useRouter();
   const { accessToken, setAccessToken, isAuthenticated, isCheckingAuth } = useAuth();
   const authFetch = useAuthFetch();
+  const { showAlert } = useAlertModal();
   const [title, setTitle] = useState("");
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
   const [savedResumeId, setSavedResumeId] = useState<number | null>(null);
@@ -199,6 +202,8 @@ export default function Home() {
   const [downloadDeadline, setDownloadDeadline] = useState<number | null>(null);
   const [downloadCountdown, setDownloadCountdown] = useState<number>(0);
   const countdownTimerRef = useRef<number | null>(null);
+  const generationCorrelationIdRef = useRef<string | null>(null);
+  const savedResumeIdRef = useRef<number | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [isUploadingAsset, setIsUploadingAsset] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
@@ -231,6 +236,22 @@ export default function Home() {
   const [isRateLimitModalOpen, setIsRateLimitModalOpen] = useState(false);
   const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
   const [rateLimitError, setRateLimitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    savedResumeIdRef.current = savedResumeId;
+  }, [savedResumeId]);
+
+  const resetPdfGenerationState = useCallback(() => {
+    generationCorrelationIdRef.current = null;
+    setReadyResumeId(null);
+    setDownloadDeadline(null);
+    setDownloadCountdown(0);
+    if (countdownTimerRef.current) {
+      window.clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+    setTaskStatus("idle");
+  }, []);
 
   useEffect(() => {
     if (taskStatus === "pending") {
@@ -446,9 +467,51 @@ export default function Home() {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data.status === "completed" && typeof data.resume_id === "number") {
+          const status = typeof data?.status === "string" ? data.status : null;
+          const resumeId = typeof data?.resume_id === "number" ? data.resume_id : null;
+          const correlationId =
+            typeof data?.correlation_id === "string" ? data.correlation_id : null;
+          const errorCode =
+            typeof data?.error_code === "number" ? data.error_code : null;
+          const errorMessage =
+            typeof data?.error_message === "string" ? data.error_message : "";
+          const missingKeys = Array.isArray(data?.missing_keys)
+            ? data.missing_keys.filter((v: unknown): v is string => typeof v === "string")
+            : [];
+
+          if (!status || typeof resumeId !== "number") {
+            return;
+          }
+
+          const expectedCorrelationId = generationCorrelationIdRef.current;
+          if (expectedCorrelationId) {
+            if (!correlationId || correlationId !== expectedCorrelationId) {
+              return;
+            }
+          }
+
+          const currentResumeId = savedResumeIdRef.current;
+          if (typeof currentResumeId === "number" && currentResumeId > 0) {
+            if (resumeId !== currentResumeId) {
+              return;
+            }
+          }
+
+          if (status === "error") {
+            resetPdfGenerationState();
+            showAlert({
+              title: titleForErrorCode(errorCode ?? ERROR_CODES.SYSTEM_ERROR),
+              message: messageForErrorCode(
+                errorCode ?? ERROR_CODES.SYSTEM_ERROR,
+                errorMessage,
+              ),
+            });
+            return;
+          }
+
+          if (status === "completed") {
             setTaskStatus("completed");
-            setReadyResumeId(data.resume_id);
+            setReadyResumeId(resumeId);
             const now = Date.now();
             const ttlMs = 5 * 60 * 1000; // 与后端 TTL 对齐 5 分钟
             setDownloadDeadline(now + ttlMs);
@@ -466,6 +529,20 @@ export default function Home() {
                 return next;
               });
             }, 1000);
+
+            if (errorCode === ERROR_CODES.RESOURCE_MISSING) {
+              window.setTimeout(() => {
+                showAlert({
+                  title: titleForErrorCode(ERROR_CODES.RESOURCE_MISSING),
+                  message:
+                    missingKeys.length > 0
+                      ? `${messageForErrorCode(ERROR_CODES.RESOURCE_MISSING)}（缺失数量：${missingKeys.length}）`
+                      : messageForErrorCode(ERROR_CODES.RESOURCE_MISSING),
+                });
+              }, 2200);
+            }
+
+            generationCorrelationIdRef.current = null;
           }
         } catch (parseError) {
           console.error("Invalid WebSocket payload:", parseError);
@@ -520,7 +597,14 @@ export default function Home() {
         socketRef.current = null;
       }
     };
-  }, [isAuthenticated, accessToken, fetchDownloadLink, resolveWebSocketURL]);
+  }, [
+    isAuthenticated,
+    accessToken,
+    fetchDownloadLink,
+    resolveWebSocketURL,
+    resetPdfGenerationState,
+    showAlert,
+  ]);
 
   const fetchLatestResume = useCallback(async () => {
     if (!isAuthenticated) {
@@ -653,6 +737,14 @@ export default function Home() {
     }
 
     setError(null);
+    generationCorrelationIdRef.current = null;
+    setReadyResumeId(null);
+    setDownloadDeadline(null);
+    setDownloadCountdown(0);
+    if (countdownTimerRef.current) {
+      window.clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
     setTaskStatus("pending");
     // 不再预开标签，改为等待生成完成后由用户点击下载
 
@@ -677,12 +769,26 @@ export default function Home() {
       }
 
       // 生成任务已提交，待 WebSocket 完成后展示下载按钮
+      try {
+        const data = await response.json();
+        const correlationId =
+          typeof data?.correlation_id === "string" ? data.correlation_id : null;
+        if (correlationId) {
+          generationCorrelationIdRef.current = correlationId;
+        } else {
+          const headerId = response.headers.get("X-Correlation-ID");
+          generationCorrelationIdRef.current = headerId ? headerId : null;
+        }
+      } catch {
+        const headerId = response.headers.get("X-Correlation-ID");
+        generationCorrelationIdRef.current = headerId ? headerId : null;
+      }
     } catch (err) {
       console.error("生成任务提交失败", err);
       if (!isRateLimitModalOpen) {
         setError((prev) => prev ?? "生成任务提交失败，请稍后重试");
       }
-      setTaskStatus("idle");
+      resetPdfGenerationState();
     }
   };
 
@@ -1401,6 +1507,19 @@ export default function Home() {
         });
 
         if (!response.ok) {
+          if (process.env.NODE_ENV !== "production") {
+            console.error("图片上传失败", {
+              status: response.status,
+            });
+          }
+          if (response.status === 403) {
+            showAlert({
+              title: "上传上限",
+              message: `您已达到最大上传数量限制（${4}张），请一段时间后再尝试上传`,
+            });
+            setError(null);
+            throw new Error("asset limit reached");
+          }
           setError(friendlyMessageForStatus(response.status, "upload"));
           throw new Error("upload failed");
         }
@@ -1415,14 +1534,18 @@ export default function Home() {
         appendImageItem(objectKey);
         setAssetPanelRefreshToken((token) => token + 1);
       } catch (err) {
-        console.error("图片上传失败", err);
-        setError((prev) => prev ?? "图片上传失败，请重试");
+        if (process.env.NODE_ENV !== "production") {
+          console.error("图片上传失败", err);
+        }
+        if (String((err as Error | undefined)?.message ?? "") !== "asset limit reached") {
+          setError((prev) => prev ?? "图片上传失败，请重试");
+        }
       } finally {
         setIsUploadingAsset(false);
         event.target.value = "";
       }
     },
-    [authFetch, isAuthenticated, appendImageItem],
+    [authFetch, isAuthenticated, appendImageItem, showAlert],
   );
 
   const handleSelectAssetFromPanel = useCallback(
@@ -1603,7 +1726,7 @@ export default function Home() {
       
 
       <div className="relative">
-        <div className="fixed left-6 top-1/2 -translate-y-1/2 z-40">
+        <div className="fixed left-6 inset-y-0 z-40 flex items-center">
           <Dock
             onAddText={handleAddText}
             onAddSectionTitle={handleAddSectionTitle}

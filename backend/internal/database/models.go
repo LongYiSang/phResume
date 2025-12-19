@@ -18,23 +18,33 @@ type User struct {
 // Resume 表示用户创建的简历内容。
 type Resume struct {
 	gorm.Model
-	Title           string         `gorm:"size:255"`
-	Content         datatypes.JSON `gorm:"type:jsonb"`
-	UserID          uint           `gorm:"index"`
-	User            User           `gorm:"constraint:OnDelete:CASCADE"`
-	PdfUrl          string         `gorm:"size:512"`
-	Status          string         `gorm:"size:32"`
-	PreviewImageURL string         `gorm:"size:512"`
+	Title            string         `gorm:"size:255"`
+	Content          datatypes.JSON `gorm:"type:jsonb"`
+	UserID           uint           `gorm:"index"`
+	User             User           `gorm:"constraint:OnDelete:CASCADE"`
+	PdfUrl           string         `gorm:"size:512"`
+	Status           string         `gorm:"size:32"`
+	PreviewImageURL  string         `gorm:"size:512"`
+	PreviewObjectKey string         `gorm:"size:512"`
 }
 
 // Template 表示可复用的简历模板。
 // 支持私有与公开模板（IsPublic），并归属于创建者（UserID）。
 type Template struct {
 	gorm.Model
-	Title           string         `gorm:"size:255"`
-	PreviewImageURL string         `gorm:"size:512"`
-	Content         datatypes.JSON `gorm:"type:jsonb"` // JSONB 存储 layout_settings 与 items
-	IsPublic        bool           `gorm:"default:false"`
-	UserID          uint           `gorm:"index"`
-	User            User           `gorm:"constraint:OnDelete:CASCADE"`
+	Title            string         `gorm:"size:255"`
+	PreviewImageURL  string         `gorm:"size:512"`
+	PreviewObjectKey string         `gorm:"size:512"`
+	Content          datatypes.JSON `gorm:"type:jsonb"` // JSONB 存储 layout_settings 与 items
+	IsPublic         bool           `gorm:"default:false"`
+	UserID           uint           `gorm:"index"`
+	User             User           `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+type Asset struct {
+	gorm.Model
+	UserID      uint   `gorm:"index;not null"`
+	ObjectKey   string `gorm:"uniqueIndex;size:512;not null"`
+	ContentType string `gorm:"size:128"`
+	Size        int64
 }

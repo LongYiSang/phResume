@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import { Button, Input } from "@heroui/react";
 import { X, Lock, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -20,6 +21,7 @@ export function ChangePasswordModal({
   onClose,
   onSuccess,
 }: ChangePasswordModalProps) {
+  const [isMounted, setIsMounted] = useState(false);
   const authFetch = useAuthFetch();
   const { setAccessToken, setMustChangePassword } = useAuth();
   const [currentPassword, setCurrentPassword] = useState("");
@@ -27,6 +29,10 @@ export function ChangePasswordModal({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const validationError = useMemo(() => {
     if (!currentPassword.trim() || !newPassword.trim() || !confirmPassword.trim()) {
@@ -38,7 +44,7 @@ export function ChangePasswordModal({
     return null;
   }, [currentPassword, newPassword, confirmPassword]);
 
-  if (!isOpen) return null;
+  if (!isMounted || !isOpen) return null;
 
   const handleClose = () => {
     if (!canClose) return;
@@ -92,13 +98,13 @@ export function ChangePasswordModal({
     }
   };
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/20 backdrop-blur-sm transition-all animate-in fade-in duration-200"
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/20 backdrop-blur-sm transition-all animate-in fade-in duration-200 p-4"
       onClick={handleClose}
     >
       <div
-        className="w-[420px] bg-white/90 backdrop-blur-xl border border-white/60 rounded-[32px] shadow-card p-6 flex flex-col gap-5 animate-in zoom-in-95 duration-200"
+        className="w-full max-w-[640px] max-h-[calc(100vh-2rem)] overflow-y-auto bg-white/90 backdrop-blur-xl border border-white/60 rounded-[32px] shadow-card p-6 flex flex-col gap-5 animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
@@ -108,9 +114,7 @@ export function ChangePasswordModal({
             </div>
             <div className="space-y-0.5">
               <h2 className="text-xl font-bold text-zinc-800">修改密码</h2>
-              <p className="text-xs text-zinc-500">
-                为了安全，首次登录需要更新初始密码
-              </p>
+              <p className="text-xs text-zinc-500">更新密码</p>
             </div>
           </div>
           {canClose && (
@@ -166,7 +170,7 @@ export function ChangePasswordModal({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
-

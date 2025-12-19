@@ -7,6 +7,7 @@ import type { CSSProperties } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useAuthFetch } from "@/hooks/useAuthFetch";
 import { API_ROUTES } from "@/lib/api-routes";
+import { useAlertModal } from "@/context/AlertModalContext";
 
 type ImageItemProps = {
   objectKey?: string;
@@ -29,9 +30,11 @@ function combineStyle(style?: CSSProperties): CSSProperties {
 function InlineImage({
   src,
   style,
+  onError,
 }: {
   src: string;
   style?: CSSProperties;
+  onError?: () => void;
 }) {
   const combinedStyle = combineStyle(style);
   return (
@@ -40,6 +43,7 @@ function InlineImage({
       alt="上传的图片"
       style={combinedStyle}
       className="pointer-events-none select-none"
+      onError={onError}
     />
   );
 }
@@ -53,6 +57,7 @@ function AuthedImage({
 }) {
   const { accessToken } = useAuth();
   const authFetch = useAuthFetch();
+  const { showAlert } = useAlertModal();
   const [imageURL, setImageURL] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -70,7 +75,20 @@ function AuthedImage({
         const response = await authFetch(API_ROUTES.ASSETS.view(objectKey));
 
         if (!response.ok) {
-          throw new Error("failed to fetch presigned url");
+          if (process.env.NODE_ENV !== "production") {
+            console.error("获取图片 URL 失败", {
+              objectKey,
+              status: response.status,
+            });
+          }
+          if (response.status === 403 || response.status === 404) {
+            showAlert({
+              title: "文件缺失",
+              message: "简历中的部分文件已被删除，请重新上传相关文件",
+            });
+          }
+          setImageURL(null);
+          return;
         }
 
         const data = await response.json();
@@ -78,7 +96,9 @@ function AuthedImage({
           setImageURL(typeof data?.url === "string" ? data.url : null);
         }
       } catch (err) {
-        console.error("获取图片 URL 失败", err);
+        if (process.env.NODE_ENV !== "production") {
+          console.error("获取图片 URL 失败", err);
+        }
         if (isMounted) {
           setImageURL(null);
         }
@@ -94,7 +114,7 @@ function AuthedImage({
     return () => {
       isMounted = false;
     };
-  }, [objectKey, accessToken, authFetch]);
+  }, [objectKey, accessToken, authFetch, showAlert]);
 
   const combinedStyle = combineStyle(style);
 
@@ -109,12 +129,33 @@ function AuthedImage({
     );
   }
 
-  return <InlineImage src={imageURL} style={style} />;
+  return (
+    <InlineImage
+      src={imageURL}
+      style={style}
+      onError={() => {
+        showAlert({
+          title: "文件缺失",
+          message: "简历中的部分文件已被删除，请重新上传相关文件",
+        });
+      }}
+    />
+  );
 }
 
 export function ImageItem({ objectKey, style, preSignedURL }: ImageItemProps) {
   if (preSignedURL) {
-    return <InlineImage src={preSignedURL} style={style} />;
+    return (
+      <InlineImage
+        src={preSignedURL}
+        style={style}
+        onError={() => {
+          if (process.env.NODE_ENV !== "production") {
+            console.error("预签名图片加载失败", { preSignedURL });
+          }
+        }}
+      />
+    );
   }
 
   if (!objectKey) {

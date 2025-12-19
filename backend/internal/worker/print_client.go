@@ -17,7 +17,7 @@ const (
 
 // fetchInternalPrintData 从后端内部打印接口拉取 JSON 数据。
 // 只允许 Worker 通过 Header 携带 INTERNAL_API_SECRET 访问。
-func fetchInternalPrintData(ctx context.Context, internalAPIBaseURL string, resourcePath string, id uint, secret string) ([]byte, error) {
+func fetchInternalPrintData(ctx context.Context, internalAPIBaseURL string, resourcePath string, id uint, secret string, correlationID string) ([]byte, error) {
 	secret = strings.TrimSpace(secret)
 	if secret == "" {
 		return nil, fmt.Errorf("internal api secret missing")
@@ -34,6 +34,9 @@ func fetchInternalPrintData(ctx context.Context, internalAPIBaseURL string, reso
 		return nil, fmt.Errorf("build internal request: %w", err)
 	}
 	req.Header.Set("X-Internal-Secret", secret)
+	if strings.TrimSpace(correlationID) != "" {
+		req.Header.Set("X-Correlation-ID", correlationID)
+	}
 
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)

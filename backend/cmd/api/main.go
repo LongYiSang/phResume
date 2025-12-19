@@ -50,7 +50,7 @@ func main() {
 	}
 	log.Printf("database connection ready")
 
-	if err := db.AutoMigrate(&database.User{}, &database.Resume{}, &database.Template{}); err != nil {
+	if err := db.AutoMigrate(&database.User{}, &database.Resume{}, &database.Template{}, &database.Asset{}); err != nil {
 		log.Fatalf("auto migrate: %v", err)
 	}
 	log.Printf("database migrated")
@@ -105,12 +105,13 @@ func main() {
 		clamdAddr,
 		cfg.API.MaxResumes,
 		cfg.API.MaxTemplates,
+		cfg.API.MaxAssetsPerUser,
+		cfg.API.MaxUploadsPerDay,
 		cfg.API.AllowedOrigins,
 		cfg.API.LoginRateLimitPerHour,
 		cfg.API.LoginLockThreshold,
 		cfg.API.LoginLockTTL,
 		cfg.API.PdfRateLimitPerHour,
-		cfg.API.UploadRateLimitPerHour,
 		cfg.API.UploadMaxBytes,
 		cfg.API.UploadMIMEWhitelist,
 		cfg.API.CookieDomain,
