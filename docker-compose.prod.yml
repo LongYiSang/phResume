@@ -66,10 +66,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请设置 POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    # 远程管理用途：会将 5432 暴露到宿主机。强烈建议在云安全组只放行你的 IP，
-    # 或改为 127.0.0.1:5432 并通过 SSH Tunnel 管理。
-    ports:
-      - "5432:5432"
     healthcheck:
       test:
         [
@@ -95,6 +91,16 @@ services:
   api:
     <<: *service-defaults
     image: ghcr.io/${GHCR_OWNER:?请设置 GHCR_OWNER}/phresume-api:${APP_VERSION:-latest}
+    init: true
+    read_only: true
+    user: "10001:10001"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 300
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=256m
     depends_on:
       db:
         condition: service_healthy
@@ -111,11 +117,19 @@ services:
   worker:
     <<: *service-defaults
     image: ghcr.io/${GHCR_OWNER:?请设置 GHCR_OWNER}/phresume-worker:${APP_VERSION:-latest}
+    init: true
+    read_only: true
+    user: "10001:10001"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 800
     # Chromium 在容器里运行依赖共享内存；默认 /dev/shm=64MB 容易导致卡死/超时。
     shm_size: "1g"
     # 配合 WORKER 里的 --disable-dev-shm-usage，让 Chromium 走 /tmp（此处用 tmpfs 提升稳定性与速度）。
     tmpfs:
-      - /tmp
+      - /tmp:rw,nosuid,nodev,noexec,size=1g
     depends_on:
       db:
         condition: service_healthy
@@ -127,27 +141,58 @@ services:
         condition: service_started
     environment:
       <<: *app-env
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp
+      XDG_CONFIG_HOME: /tmp
+      XDG_DATA_HOME: /tmp
 
   frontend:
     <<: *service-defaults
     image: ghcr.io/${GHCR_OWNER:?请设置 GHCR_OWNER}/phresume-frontend:${APP_VERSION:-latest}
+    init: true
+    read_only: true
+    user: "10002:10002"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 400
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=256m
+      - /app/.next/cache:rw,nosuid,nodev,noexec,size=256m
     depends_on:
       - api
     environment:
       API_INTERNAL_URL: http://api:8080
       NEXT_PUBLIC_API_BASE_URL: /api
       NEXT_PUBLIC_INTERNAL_API_URL: /api
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp
+      XDG_CONFIG_HOME: /tmp
+      XDG_DATA_HOME: /tmp
     expose:
       - "3000"
 
   nginx:
     <<: *service-defaults
     image: nginx:1.27-alpine
+    init: true
+    read_only: true
+    user: "101:101"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 200
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=128m,uid=101,gid=101,mode=1777
+      - /var/cache/nginx:rw,nosuid,nodev,noexec,size=128m,uid=101,gid=101,mode=0755
+      - /var/run:rw,nosuid,nodev,noexec,size=16m,uid=101,gid=101,mode=0755
     depends_on:
       - frontend
       - api
     ports:
-      - "80:80"
+      - "80:8080"
     volumes:
       - ./deploy/nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
 

@@ -66,7 +66,10 @@ func renderFrontendPage(logger *slog.Logger, targetURL string, preReadyScript st
 		Set("use-gl", "swiftshader").
 		// 容器内常见问题：/dev/shm 太小会导致 Chromium 卡死/崩溃
 		Set("disable-dev-shm-usage").
-		Set("no-zygote")
+		Set("no-zygote").
+		// 强制把用户数据与缓存写到 /tmp（配合只读根文件系统与 tmpfs）
+		Set("user-data-dir", "/tmp/chromium").
+		Set("disk-cache-dir", "/tmp/chromium-cache")
 
 	if path, ok := launcher.LookPath(); ok {
 		launch = launch.Bin(path)
