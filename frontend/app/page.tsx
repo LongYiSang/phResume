@@ -201,6 +201,8 @@ export default function Home() {
   const [readyResumeId, setReadyResumeId] = useState<number | null>(null);
   const [downloadDeadline, setDownloadDeadline] = useState<number | null>(null);
   const [downloadCountdown, setDownloadCountdown] = useState<number>(0);
+  const [downloadToken, setDownloadToken] = useState<string | null>(null);
+  const [downloadUid, setDownloadUid] = useState<number | null>(null);
   const countdownTimerRef = useRef<number | null>(null);
   const generationCorrelationIdRef = useRef<string | null>(null);
   const savedResumeIdRef = useRef<number | null>(null);
@@ -246,12 +248,52 @@ export default function Home() {
     setReadyResumeId(null);
     setDownloadDeadline(null);
     setDownloadCountdown(0);
+    setDownloadToken(null);
+    setDownloadUid(null);
     if (countdownTimerRef.current) {
       window.clearInterval(countdownTimerRef.current);
       countdownTimerRef.current = null;
     }
     setTaskStatus("idle");
   }, []);
+
+  const resetDownloadLinkState = useCallback(() => {
+    setDownloadDeadline(null);
+    setDownloadCountdown(0);
+    setDownloadToken(null);
+    setDownloadUid(null);
+    if (countdownTimerRef.current) {
+      window.clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+  }, []);
+
+  const startDownloadCountdown = useCallback(
+    (ttlSeconds: number) => {
+      const ttl = Math.max(0, Math.floor(ttlSeconds));
+      const now = Date.now();
+      setDownloadDeadline(ttl > 0 ? now + ttl * 1000 : null);
+      setDownloadCountdown(ttl);
+      if (countdownTimerRef.current) {
+        window.clearInterval(countdownTimerRef.current);
+      }
+      if (ttl <= 0) {
+        countdownTimerRef.current = null;
+        return;
+      }
+      countdownTimerRef.current = window.setInterval(() => {
+        setDownloadCountdown((prev) => {
+          const next = Math.max(0, prev - 1);
+          if (next === 0 && countdownTimerRef.current) {
+            window.clearInterval(countdownTimerRef.current);
+            countdownTimerRef.current = null;
+          }
+          return next;
+        });
+      }, 1000);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (taskStatus === "pending") {
@@ -376,11 +418,11 @@ export default function Home() {
     [withHistory],
   );
 
-  const fetchDownloadLink = useCallback(
+  const requestDownloadLink = useCallback(
     async (resumeId: number, forceDownload = false) => {
       if (!isAuthenticated) {
         setError("请先登录");
-        setTaskStatus("idle");
+        resetDownloadLinkState();
         return;
       }
 
@@ -396,33 +438,60 @@ export default function Home() {
         const response = await authFetch(url.toString());
 
         if (!response.ok) {
-          throw new Error("failed to fetch download link");
+          throw new Error(`failed to request download link: ${response.status}`);
         }
 
         const data = await response.json();
-        if (data?.url) {
-          try {
-            window.location.href = data.url;
-          } catch {
-            window.open(data.url, "_blank");
-          }
-        } else {
-          throw new Error("missing url in response");
+        const token = typeof data?.token === "string" ? data.token : null;
+        const uid = typeof data?.uid === "number" ? data.uid : null;
+        const expiresIn = typeof data?.expires_in === "number" ? data.expires_in : null;
+        if (!token || typeof uid !== "number" || !expiresIn) {
+          throw new Error("invalid download token response");
         }
+        setDownloadToken(token);
+        setDownloadUid(uid);
+        startDownloadCountdown(expiresIn);
       } catch (err) {
-        console.error("获取预签名链接失败", err);
+        console.error("获取下载链接失败", err);
+        resetDownloadLinkState();
         setError("获取下载链接失败，请稍后重试");
-      } finally {
-        setTaskStatus("idle");
       }
     },
-    [isAuthenticated, authFetch],
+    [isAuthenticated, authFetch, resetDownloadLinkState, startDownloadCountdown],
   );
 
-  const handleDownloadClick = useCallback(async () => {
+  const handleRequestDownloadLink = useCallback(async () => {
     if (!readyResumeId) return;
-    await fetchDownloadLink(readyResumeId, true);
-  }, [readyResumeId, fetchDownloadLink]);
+    await requestDownloadLink(readyResumeId, true);
+  }, [readyResumeId, requestDownloadLink]);
+
+  const handleDownloadFile = useCallback(() => {
+    if (!readyResumeId) return;
+    if (!downloadToken || !downloadUid || downloadCountdown <= 0) {
+      setError("下载链接已过期，请重新获取");
+      return;
+    }
+
+    const fname = `Resume-${readyResumeId}.pdf`;
+    const url = API_ROUTES.RESUME.downloadFile(readyResumeId, {
+      uid: downloadUid,
+      token: downloadToken,
+      download: "1",
+      filename: fname,
+    });
+
+    // 立即在前端失效，避免重复点击（真正的一次性校验在后端）
+    resetDownloadLinkState();
+
+    try {
+      const win = window.open(url, "_blank");
+      if (!win) {
+        window.location.href = url;
+      }
+    } catch {
+      window.location.href = url;
+    }
+  }, [downloadCountdown, downloadToken, downloadUid, readyResumeId, resetDownloadLinkState]);
 
   useEffect(() => {
     if (!isCheckingAuth && isAuthenticated === false) {
@@ -512,23 +581,8 @@ export default function Home() {
           if (status === "completed") {
             setTaskStatus("completed");
             setReadyResumeId(resumeId);
-            const now = Date.now();
-            const ttlMs = 5 * 60 * 1000; // 与后端 TTL 对齐 5 分钟
-            setDownloadDeadline(now + ttlMs);
-            setDownloadCountdown(Math.ceil(ttlMs / 1000));
-            if (countdownTimerRef.current) {
-              window.clearInterval(countdownTimerRef.current);
-            }
-            countdownTimerRef.current = window.setInterval(() => {
-              setDownloadCountdown((prev) => {
-                const next = Math.max(0, prev - 1);
-                if (next === 0 && countdownTimerRef.current) {
-                  window.clearInterval(countdownTimerRef.current);
-                  countdownTimerRef.current = null;
-                }
-                return next;
-              });
-            }, 1000);
+            resetDownloadLinkState();
+            void requestDownloadLink(resumeId, true);
 
             if (errorCode === ERROR_CODES.RESOURCE_MISSING) {
               window.setTimeout(() => {
@@ -600,7 +654,8 @@ export default function Home() {
   }, [
     isAuthenticated,
     accessToken,
-    fetchDownloadLink,
+    requestDownloadLink,
+    resetDownloadLinkState,
     resolveWebSocketURL,
     resetPdfGenerationState,
     showAlert,
@@ -739,12 +794,7 @@ export default function Home() {
     setError(null);
     generationCorrelationIdRef.current = null;
     setReadyResumeId(null);
-    setDownloadDeadline(null);
-    setDownloadCountdown(0);
-    if (countdownTimerRef.current) {
-      window.clearInterval(countdownTimerRef.current);
-      countdownTimerRef.current = null;
-    }
+    resetDownloadLinkState();
     setTaskStatus("pending");
     // 不再预开标签，改为等待生成完成后由用户点击下载
 
@@ -1793,7 +1843,8 @@ export default function Home() {
               onUpdateTitle={setTitle}
               onSave={handleSave}
               onDownload={handleDownload}
-              onDownloadLink={handleDownloadClick}
+              onRequestDownloadLink={handleRequestDownloadLink}
+              onDownloadFile={handleDownloadFile}
               savedResumeId={savedResumeId}
               historyCanUndo={historyStack.length > 0}
               historyCanRedo={redoStack.length > 0}

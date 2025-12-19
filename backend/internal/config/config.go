@@ -39,6 +39,8 @@ type APIConfig struct {
 	UploadMIMEWhitelistRaw string        `mapstructure:"upload_mime_whitelist"`
 	UploadMIMEWhitelist    []string      `mapstructure:"-"`
 	PdfRateLimitPerHour    int           `mapstructure:"pdf_rate_limit_per_hour"`
+	PdfDownloadTokenTTLRaw string        `mapstructure:"pdf_download_token_ttl"`
+	PdfDownloadTokenTTL    time.Duration `mapstructure:"-"`
 	MaxAssetsPerUser       int           `mapstructure:"max_assets_per_user"`
 	MaxUploadsPerDay       int           `mapstructure:"max_uploads_per_day"`
 	CookieDomain           string        `mapstructure:"cookie_domain"`
@@ -199,6 +201,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("api.upload_max_bytes", 5*1024*1024)
 	v.SetDefault("api.upload_mime_whitelist", "image/png,image/jpeg,image/webp")
 	v.SetDefault("api.pdf_rate_limit_per_hour", 3)
+	v.SetDefault("api.pdf_download_token_ttl", "60s")
 	v.SetDefault("api.max_assets_per_user", 4)
 	v.SetDefault("api.max_uploads_per_day", 4)
 	v.SetDefault("api.cookie_domain", "")
@@ -239,6 +242,7 @@ func bindEnv(v *viper.Viper) error {
 		"api.upload_max_bytes":          {"API_UPLOAD_MAX_BYTES"},
 		"api.upload_mime_whitelist":     {"API_UPLOAD_MIME_WHITELIST"},
 		"api.pdf_rate_limit_per_hour":   {"API_PDF_RATE_LIMIT_PER_HOUR"},
+		"api.pdf_download_token_ttl":    {"API_PDF_DOWNLOAD_TOKEN_TTL"},
 		"api.max_assets_per_user":       {"API_MAX_ASSETS_PER_USER"},
 		"api.max_uploads_per_day":       {"API_MAX_UPLOADS_PER_DAY"},
 		"api.cookie_domain":             {"API_COOKIE_DOMAIN"},
@@ -309,6 +313,9 @@ func validate(cfg Config) error {
 	}
 	if cfg.API.PdfRateLimitPerHour <= 0 {
 		return errors.New("api pdf rate limit per hour must be positive")
+	}
+	if cfg.API.PdfDownloadTokenTTL <= 0 {
+		return errors.New("api pdf download token ttl must be positive")
 	}
 	if cfg.API.MaxAssetsPerUser <= 0 {
 		return errors.New("api max assets per user must be positive")
@@ -420,6 +427,15 @@ func (a *APIConfig) prepare() error {
 		return fmt.Errorf("parse api login lock ttl: %w", err)
 	}
 	a.LoginLockTTL = d
+
+	if strings.TrimSpace(a.PdfDownloadTokenTTLRaw) == "" {
+		return errors.New("api pdf download token ttl is required")
+	}
+	tokenTTL, err := time.ParseDuration(a.PdfDownloadTokenTTLRaw)
+	if err != nil {
+		return fmt.Errorf("parse api pdf download token ttl: %w", err)
+	}
+	a.PdfDownloadTokenTTL = tokenTTL
 
 	if a.AllowedOriginsRaw != "" {
 		parts := []string{}

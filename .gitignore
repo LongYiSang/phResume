@@ -38,6 +38,7 @@ tmp/
 .turbo/
 .vercel/
 .cache/
+.gocache
 /backend/test.pdf
 /backend/internal/config/config_test.go
 /backend/api

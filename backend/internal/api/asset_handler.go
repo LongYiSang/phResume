@@ -144,9 +144,9 @@ func (h *AssetHandler) UploadAsset(c *gin.Context) {
 
 	dayWindow := time.Now().UTC().Format("20060102")
 	rateKey := fmt.Sprintf("rate:upload:day:%d:%s", userID, dayWindow)
-	count, _ := h.RedisClient.Incr(ctx, rateKey).Result()
-	if count == 1 {
-		_ = h.RedisClient.Expire(ctx, rateKey, 24*time.Hour).Err()
+	count, err := incrWithTTL(ctx, h.RedisClient, rateKey, 24*time.Hour)
+	if err != nil {
+		count = 0
 	}
 	if h.maxUploadsPerDay > 0 && count > int64(h.maxUploadsPerDay) {
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})

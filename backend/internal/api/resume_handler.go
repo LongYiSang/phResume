@@ -2,11 +2,15 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -32,10 +36,20 @@ type ResumeHandler struct {
 	maxResumes          int
 	redisClient         *redis.Client
 	pdfRateLimitPerHour int
+	pdfDownloadTokenTTL time.Duration
 }
 
 // NewResumeHandler 构造 ResumeHandler。
-func NewResumeHandler(db *gorm.DB, asynqClient *asynq.Client, storageClient *storage.Client, internalSecret string, maxResumes int, redisClient *redis.Client, pdfRateLimitPerHour int) *ResumeHandler {
+func NewResumeHandler(
+	db *gorm.DB,
+	asynqClient *asynq.Client,
+	storageClient *storage.Client,
+	internalSecret string,
+	maxResumes int,
+	redisClient *redis.Client,
+	pdfRateLimitPerHour int,
+	pdfDownloadTokenTTL time.Duration,
+) *ResumeHandler {
 	return &ResumeHandler{
 		db:                  db,
 		asynqClient:         asynqClient,
@@ -44,6 +58,7 @@ func NewResumeHandler(db *gorm.DB, asynqClient *asynq.Client, storageClient *sto
 		maxResumes:          maxResumes,
 		redisClient:         redisClient,
 		pdfRateLimitPerHour: pdfRateLimitPerHour,
+		pdfDownloadTokenTTL: pdfDownloadTokenTTL,
 	}
 }
 
@@ -405,9 +420,9 @@ func (h *ResumeHandler) DownloadResume(c *gin.Context) {
 	// 每用户每小时 3 次限制
 	window := time.Now().UTC().Format("2006010215")
 	rateKey := fmt.Sprintf("rate:pdf:%d:%s", userID, window)
-	count, _ := h.redisClient.Incr(c.Request.Context(), rateKey).Result()
-	if count == 1 {
-		_ = h.redisClient.Expire(c.Request.Context(), rateKey, time.Hour).Err()
+	count, err := incrWithTTL(c.Request.Context(), h.redisClient, rateKey, time.Hour)
+	if err != nil {
+		count = 0
 	}
 	if count > int64(h.pdfRateLimitPerHour) {
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
@@ -500,25 +515,165 @@ func (h *ResumeHandler) GetDownloadLink(c *gin.Context) {
 		return
 	}
 
-	forceDownload := strings.EqualFold(strings.TrimSpace(c.Query("download")), "1")
-	filename := strings.TrimSpace(c.Query("filename"))
-	if filename == "" {
-		filename = fmt.Sprintf("Resume-%d.pdf", resume.ID)
-	}
-
-	params := map[string]string{}
-	if forceDownload {
-		// 兼容不同 UA 的文件名参数
-		params["response-content-disposition"] = fmt.Sprintf("attachment; filename=\"%s\"", filename)
-	}
-
-	signedURL, err := h.storage.GeneratePresignedURLWithParams(c.Request.Context(), resume.PdfUrl, 5*time.Minute, params)
+	token, err := h.issueDownloadToken(c.Request.Context(), userID, resume.ID)
 	if err != nil {
-		Internal(c, "failed to generate download link")
+		Internal(c, "failed to create download token")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"url": signedURL})
+	expiresIn := int(h.pdfDownloadTokenTTL.Seconds())
+	if expiresIn <= 0 {
+		expiresIn = 1
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"token":      token,
+		"uid":        userID,
+		"expires_in": expiresIn,
+	})
+}
+
+var consumeDownloadTokenScript = redis.NewScript(`
+local v = redis.call('GET', KEYS[1])
+if not v then
+  return 0
+end
+if v == 'used' then
+  return -1
+end
+if v ~= ARGV[1] then
+  return -2
+end
+redis.call('SET', KEYS[1], 'used', 'KEEPTTL')
+return 1
+`)
+
+func downloadTokenKey(userID, resumeID uint) string {
+	return fmt.Sprintf("download_token:%d:%d", userID, resumeID)
+}
+
+func generateDownloadToken() (string, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+func (h *ResumeHandler) issueDownloadToken(ctx context.Context, userID, resumeID uint) (string, error) {
+	token, err := generateDownloadToken()
+	if err != nil {
+		return "", err
+	}
+	key := downloadTokenKey(userID, resumeID)
+	if err := h.redisClient.Set(ctx, key, token, h.pdfDownloadTokenTTL).Err(); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+func (h *ResumeHandler) consumeDownloadToken(ctx context.Context, userID, resumeID uint, token string) (int64, error) {
+	key := downloadTokenKey(userID, resumeID)
+	res, err := consumeDownloadTokenScript.Run(ctx, h.redisClient, []string{key}, token).Int64()
+	if err != nil {
+		return 0, err
+	}
+	return res, nil
+}
+
+func sanitizeDownloadFilename(name string, resumeID uint) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Sprintf("Resume-%d.pdf", resumeID)
+	}
+	name = strings.ReplaceAll(name, "\r", "")
+	name = strings.ReplaceAll(name, "\n", "")
+	name = strings.ReplaceAll(name, "\\", "/")
+	name = path.Base(name)
+	name = strings.ReplaceAll(name, `"`, "")
+	if len(name) > 160 {
+		name = name[:160]
+	}
+	if !strings.HasSuffix(strings.ToLower(name), ".pdf") {
+		name += ".pdf"
+	}
+	return name
+}
+
+// DownloadResumeFile 通过一次性 Token 校验后，直接代理/流式返回 PDF 文件内容。
+func (h *ResumeHandler) DownloadResumeFile(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	userIDParam := strings.TrimSpace(c.Query("uid"))
+	userID64, err := strconv.ParseUint(userIDParam, 10, 64)
+	if err != nil || userID64 == 0 {
+		NotFound(c, "download link expired")
+		return
+	}
+	userID := uint(userID64)
+
+	resumeID64, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || resumeID64 == 0 {
+		NotFound(c, "download link expired")
+		return
+	}
+	resumeID := uint(resumeID64)
+
+	token := strings.TrimSpace(c.Query("token"))
+	if token == "" || len(token) > 512 {
+		NotFound(c, "download link expired")
+		return
+	}
+
+	result, err := h.consumeDownloadToken(ctx, userID, resumeID, token)
+	if err != nil {
+		Internal(c, "failed to verify download token")
+		return
+	}
+	if result != 1 {
+		NotFound(c, "download link expired")
+		return
+	}
+
+	var resume database.Resume
+	if err := h.db.WithContext(ctx).
+		Select("id", "user_id", "pdf_url").
+		Where("id = ? AND user_id = ?", resumeID, userID).
+		First(&resume).Error; err != nil {
+		NotFound(c, "download link expired")
+		return
+	}
+	if strings.TrimSpace(resume.PdfUrl) == "" {
+		NotFound(c, "download link expired")
+		return
+	}
+
+	filename := sanitizeDownloadFilename(c.Query("filename"), resumeID)
+
+	obj, err := h.storage.GetObject(ctx, resume.PdfUrl)
+	if err != nil {
+		Internal(c, "failed to download pdf")
+		return
+	}
+	defer obj.Close()
+
+	info, err := obj.Stat()
+	if err != nil {
+		if storage.IsNoSuchKey(err) {
+			NotFound(c, "download link expired")
+			return
+		}
+		Internal(c, "failed to download pdf")
+		return
+	}
+
+	c.Header("Cache-Control", "no-store")
+	c.Header("Referrer-Policy", "no-referrer")
+	c.Header("X-Content-Type-Options", "nosniff")
+
+	headers := map[string]string{
+		"Content-Disposition": fmt.Sprintf("attachment; filename=\"%s\"", filename),
+	}
+	c.DataFromReader(http.StatusOK, info.Size, "application/pdf", io.LimitReader(obj, info.Size), headers)
 }
 
 // GetPrintResumeData 返回渲染 PDF 所需的 JSON 数据，附带预签名图像链接。

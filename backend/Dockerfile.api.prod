@@ -20,10 +20,13 @@ WORKDIR /app
 RUN apk add --no-cache ca-certificates
 
 ENV GIN_MODE=release
+ENV HOME=/tmp
 
 COPY --from=builder /out/api /usr/local/bin/api
 
 EXPOSE 8080
 
-CMD ["api"]
+RUN addgroup -S -g 10001 app && adduser -S -D -H -u 10001 -G app app
+USER 10001:10001
 
+CMD ["api"]

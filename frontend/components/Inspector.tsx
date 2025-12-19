@@ -18,7 +18,8 @@ type InspectorProps = {
   onUpdateTitle: (t: string) => void;
   onSave: () => void;
   onDownload: () => void;
-  onDownloadLink?: () => void;
+  onRequestDownloadLink?: () => void;
+  onDownloadFile?: () => void;
   savedResumeId?: number | null;
   historyCanUndo: boolean;
   historyCanRedo: boolean;
@@ -77,7 +78,8 @@ export default function Inspector({ title, onUpdateTitle, onSave, onDownload, hi
   taskStatus,
   downloadCountdown,
   savedResumeId,
-  onDownloadLink,
+  onRequestDownloadLink,
+  onDownloadFile,
 }: InspectorProps & {
   taskStatus?: "idle" | "pending" | "completed";
   downloadCountdown?: number;
@@ -85,43 +87,54 @@ export default function Inspector({ title, onUpdateTitle, onSave, onDownload, hi
   const { activeEditor } = useActiveEditor();
 
   const renderDownloadButton = () => {
-    // 状态还原：倒计时结束时，显示原始"生成PDF"按钮
-    const isExpired = taskStatus === "completed" && (!downloadCountdown || downloadCountdown <= 0);
-    const showDownload = taskStatus === "completed" && !isExpired;
+    const canDownload =
+      taskStatus === "completed" && typeof downloadCountdown === "number" && downloadCountdown > 0;
+    const canRequestLink = taskStatus === "completed" && !canDownload;
 
     return (
       <Button
-        variant={showDownload ? "solid" : "bordered"}
-        color={showDownload ? "success" : "default"}
+        variant={canDownload ? "solid" : "bordered"}
+        color={canDownload ? "success" : "default"}
         className={`rounded-2xl transition-all duration-500 ${
-          showDownload
+          canDownload
             ? "bg-kawaii-mint text-white border-transparent shadow-md hover:shadow-lg opacity-100"
             : "opacity-100" // 淡入淡出通过 key 切换时的 transition 处理
         }`}
         onPress={() => {
-          if (showDownload) {
-            onDownloadLink?.();
-          } else {
+          if (canDownload) {
+            onDownloadFile?.();
+            return;
+          }
+          if (canRequestLink) {
+            onRequestDownloadLink?.();
+            return;
+          }
+          if (taskStatus !== "pending") {
             onDownload();
           }
         }}
         disabled={taskStatus === "pending"}
         startContent={<Download size={18} />}
-        key={showDownload ? "download-btn" : "generate-btn"} // Key change triggers animation
+        key={canDownload ? "download-btn" : canRequestLink ? "refresh-link-btn" : "generate-btn"}
       >
         <div className="flex flex-col items-center leading-tight">
           <span className="animate-fadeIn">
             {taskStatus === "pending"
               ? "生成中..."
-              : showDownload
+              : canDownload
               ? "下载 PDF"
+              : canRequestLink
+              ? "重新获取链接"
               : "生成 PDF"}
           </span>
-          {showDownload && downloadCountdown && (
+          {canDownload && downloadCountdown && (
             <span className="text-[10px] opacity-90 animate-fadeIn">
               {Math.floor(downloadCountdown / 60)}:
               {(downloadCountdown % 60).toString().padStart(2, "0")} 后过期
             </span>
+          )}
+          {canRequestLink && (
+            <span className="text-[10px] opacity-70 animate-fadeIn">链接已过期或已使用</span>
           )}
         </div>
       </Button>
