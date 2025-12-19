@@ -19,7 +19,6 @@ import (
 
 	"phResume/internal/api/middleware"
 	"phResume/internal/database"
-	"phResume/internal/resume"
 	"phResume/internal/storage"
 	"phResume/internal/tasks"
 )
@@ -442,8 +441,10 @@ func (h *ResumeHandler) DownloadResume(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{
-		"message": "PDF generation request accepted",
-		"task_id": info.ID,
+		"message":        "PDF generation request accepted",
+		"task_id":        info.ID,
+		"resume_id":      resume.ID,
+		"correlation_id": correlationID,
 	})
 }
 
@@ -540,13 +541,8 @@ func (h *ResumeHandler) GetPrintResumeData(c *gin.Context) {
 		return
 	}
 
-	var content resume.Content
-	if err := json.Unmarshal(resumeModel.Content, &content); err != nil {
-		Internal(c, "failed to decode resume")
-		return
-	}
-
-	if err := inlineContentImages(ctx, h.storage, resumeModel.UserID, &content); err != nil {
+	printData, removed, err := BuildPrintData(ctx, h.storage, resumeModel.UserID, resumeModel.Content)
+	if err != nil {
 		if status, ok := statusFromInlineError(err); ok {
 			Error(c, status, err.Error())
 			return
@@ -555,7 +551,13 @@ func (h *ResumeHandler) GetPrintResumeData(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, content)
+	log := middleware.LoggerFromContext(c).With(
+		slog.Int("resume_id", int(resumeModel.ID)),
+		slog.Uint64("user_id", uint64(resumeModel.UserID)),
+	)
+	LogRemovedImageItems(log, removed)
+
+	c.JSON(http.StatusOK, printData)
 }
 
 func (h *ResumeHandler) getResumeForUser(ctx context.Context, idParam string, userID uint) (*database.Resume, error) {

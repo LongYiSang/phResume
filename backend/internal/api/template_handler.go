@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,7 +15,6 @@ import (
 
 	"phResume/internal/api/middleware"
 	"phResume/internal/database"
-	"phResume/internal/resume"
 	"phResume/internal/storage"
 	"phResume/internal/tasks"
 )
@@ -315,13 +313,8 @@ func (h *TemplateHandler) GetPrintTemplateData(c *gin.Context) {
 		return
 	}
 
-	var content resume.Content
-	if err := json.Unmarshal(templateModel.Content, &content); err != nil {
-		Internal(c, "failed to decode template")
-		return
-	}
-
-	if err := inlineContentImages(ctx, h.storage, templateModel.UserID, &content); err != nil {
+	printData, removed, err := BuildPrintData(ctx, h.storage, templateModel.UserID, templateModel.Content)
+	if err != nil {
 		if status, ok := statusFromInlineError(err); ok {
 			Error(c, status, err.Error())
 			return
@@ -330,5 +323,11 @@ func (h *TemplateHandler) GetPrintTemplateData(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, content)
+	log := middleware.LoggerFromContext(c).With(
+		slog.Int("template_id", int(templateModel.ID)),
+		slog.Uint64("user_id", uint64(templateModel.UserID)),
+	)
+	LogRemovedImageItems(log, removed)
+
+	c.JSON(http.StatusOK, printData)
 }

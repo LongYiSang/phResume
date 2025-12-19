@@ -17,6 +17,7 @@ import (
 	"gorm.io/gorm"
 
 	"phResume/internal/database"
+	"phResume/internal/errcode"
 	"phResume/internal/storage"
 	"phResume/internal/tasks"
 )
@@ -54,7 +55,7 @@ func NewPDFTaskHandler(
 }
 
 // ProcessTask 实现 asynq.Handler。
-func (h *PDFTaskHandler) ProcessTask(ctx context.Context, t *asynq.Task) error {
+func (h *PDFTaskHandler) ProcessTask(ctx context.Context, t *asynq.Task) (retErr error) {
 	log := h.logger
 
 	var payload tasks.PDFGeneratePayload
@@ -79,7 +80,29 @@ func (h *PDFTaskHandler) ProcessTask(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	pdfBytes, page, cleanup, err := h.generatePDFFromFrontend(ctx, resume.ID)
+	log = log.With(slog.Uint64("user_id", uint64(resume.UserID)))
+
+	defer func() {
+		if retErr == nil {
+			return
+		}
+		if !isFinalAsynqAttempt(ctx) {
+			return
+		}
+
+		notify := PDFGenerationNotifyMessage{
+			Status:        "error",
+			ResumeID:      resume.ID,
+			CorrelationID: payload.CorrelationID,
+			ErrorCode:     errcode.SystemError,
+			ErrorMessage:  strings.TrimSpace(retErr.Error()),
+		}
+		if err := h.publishPDFGenerationNotify(ctx, resume.UserID, notify); err != nil {
+			log.Error("publish pdf error notification failed", slog.Any("error", err))
+		}
+	}()
+
+	pdfBytes, page, cleanup, missingKeys, resourceMissing, err := h.generatePDFFromFrontend(ctx, resume.ID, payload.CorrelationID)
 	if err != nil {
 		log.Error("generate pdf via frontend failed", slog.Any("error", err))
 		return err
@@ -102,18 +125,23 @@ func (h *PDFTaskHandler) ProcessTask(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	message := map[string]any{
-		"status":    "completed",
-		"resume_id": resume.ID,
+	notify := PDFGenerationNotifyMessage{
+		Status:        "completed",
+		ResumeID:      resume.ID,
+		CorrelationID: payload.CorrelationID,
+		ErrorCode:     errcode.OK,
+		ErrorMessage:  "",
 	}
-	data, err := json.Marshal(message)
-	if err != nil {
-		log.Error("marshal notification payload failed", slog.Any("error", err))
-		return err
+	if resourceMissing {
+		notify.ErrorCode = errcode.ResourceMissing
+		notify.ErrorMessage = "部分图片资源缺失/无效，已自动跳过并继续生成"
+		notify.MissingKeys = missingKeys
+		log.Warn("pdf generated with missing assets",
+			slog.Int("missing_count", len(missingKeys)),
+			slog.Any("missing_keys", missingKeys),
+		)
 	}
-
-	channel := fmt.Sprintf("user_notify:%d", resume.UserID)
-	if err := h.redisClient.Publish(ctx, channel, data).Err(); err != nil {
+	if err := h.publishPDFGenerationNotify(ctx, resume.UserID, notify); err != nil {
 		log.Error("publish redis notification failed", slog.Any("error", err))
 		return err
 	}
@@ -122,12 +150,69 @@ func (h *PDFTaskHandler) ProcessTask(ctx context.Context, t *asynq.Task) error {
 		log.Warn("generate resume preview failed", slog.Any("error", err))
 	}
 
-	log.Info("Published notification to channel", slog.String("channel", channel))
 	log.Info("PDF generation task completed successfully.")
 	return nil
 }
 
-func (h *PDFTaskHandler) generatePDFFromFrontend(ctx context.Context, resumeID uint) (_ []byte, page *rod.Page, cleanup func(), err error) {
+func (h *PDFTaskHandler) publishPDFGenerationNotify(ctx context.Context, userID uint, notify PDFGenerationNotifyMessage) error {
+	data, err := json.Marshal(notify)
+	if err != nil {
+		return fmt.Errorf("marshal notification payload: %w", err)
+	}
+	channel := fmt.Sprintf("user_notify:%d", userID)
+	if err := h.redisClient.Publish(ctx, channel, data).Err(); err != nil {
+		return fmt.Errorf("publish redis notification to %q: %w", channel, err)
+	}
+	return nil
+}
+
+func isFinalAsynqAttempt(ctx context.Context) bool {
+	retryCount, ok1 := asynq.GetRetryCount(ctx)
+	maxRetry, ok2 := asynq.GetMaxRetry(ctx)
+	if !ok1 || !ok2 {
+		return false
+	}
+	return retryCount >= maxRetry
+}
+
+type printDataWarning struct {
+	Code        int      `json:"code"`
+	Message     string   `json:"message"`
+	MissingKeys []string `json:"missing_keys"`
+}
+
+type printDataMeta struct {
+	Warnings []printDataWarning `json:"warnings"`
+}
+
+func extractResourceMissingWarning(printData []byte) (missingKeys []string, hasWarning bool) {
+	var meta printDataMeta
+	if err := json.Unmarshal(printData, &meta); err != nil {
+		return nil, false
+	}
+	uniq := make(map[string]struct{})
+	var result []string
+	for _, w := range meta.Warnings {
+		if w.Code != errcode.ResourceMissing {
+			continue
+		}
+		hasWarning = true
+		for _, k := range w.MissingKeys {
+			key := strings.TrimSpace(k)
+			if key == "" {
+				continue
+			}
+			if _, ok := uniq[key]; ok {
+				continue
+			}
+			uniq[key] = struct{}{}
+			result = append(result, key)
+		}
+	}
+	return result, hasWarning
+}
+
+func (h *PDFTaskHandler) generatePDFFromFrontend(ctx context.Context, resumeID uint, correlationID string) (_ []byte, page *rod.Page, cleanup func(), missingKeys []string, resourceMissing bool, err error) {
 	cleanup = func() {}
 	defer func() {
 		if err != nil {
@@ -135,25 +220,26 @@ func (h *PDFTaskHandler) generatePDFFromFrontend(ctx context.Context, resumeID u
 		}
 	}()
 
-	printData, err := fetchInternalPrintData(ctx, h.internalAPIBaseURL, resumePrintPath, resumeID, h.internalSecret)
+	printData, err := fetchInternalPrintData(ctx, h.internalAPIBaseURL, resumePrintPath, resumeID, h.internalSecret, correlationID)
 	if err != nil {
-		return nil, nil, cleanup, err
+		return nil, nil, cleanup, nil, false, err
 	}
+	missingKeys, resourceMissing = extractResourceMissingWarning(printData)
 
 	targetURL := fmt.Sprintf("%s/print/%d", h.frontendBaseURL, resumeID)
 
 	injectionScript := buildPrintDataBootstrapScript(printData)
 	page, cleanup, err = renderFrontendPage(h.logger, targetURL, injectionScript)
 	if err != nil {
-		return nil, nil, cleanup, err
+		return nil, nil, cleanup, missingKeys, resourceMissing, err
 	}
 
 	data, err := exportPDF(page)
 	if err != nil {
-		return nil, nil, cleanup, err
+		return nil, nil, cleanup, missingKeys, resourceMissing, err
 	}
 
-	return data, page, cleanup, nil
+	return data, page, cleanup, missingKeys, resourceMissing, nil
 }
 
 func (h *PDFTaskHandler) generatePreviewImage(ctx context.Context, resume *database.Resume, page *rod.Page) error {

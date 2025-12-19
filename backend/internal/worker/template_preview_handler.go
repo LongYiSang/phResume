@@ -71,7 +71,7 @@ func (h *TemplatePreviewHandler) ProcessTask(ctx context.Context, t *asynq.Task)
 		return err
 	}
 
-	printData, err := fetchInternalPrintData(ctx, h.internalAPIBaseURL, templatePrintPath, template.ID, h.internalSecret)
+	printData, err := fetchInternalPrintData(ctx, h.internalAPIBaseURL, templatePrintPath, template.ID, h.internalSecret, payload.CorrelationID)
 	if err != nil {
 		log.Error("fetch internal print data failed", slog.Any("error", err))
 		return err

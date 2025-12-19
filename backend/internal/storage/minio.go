@@ -175,8 +175,7 @@ func (c *Client) DeleteObject(ctx context.Context, objectKey string) error {
 		return nil
 	}
 	if err := c.internalClient.RemoveObject(ctx, c.bucketName, objectKey, minio.RemoveObjectOptions{}); err != nil {
-		reason := strings.ToLower(err.Error())
-		if strings.Contains(reason, "nosuchkey") || strings.Contains(reason, "not found") {
+		if IsNoSuchKey(err) {
 			return nil
 		}
 		return fmt.Errorf("remove object %q: %w", objectKey, err)
