@@ -34,6 +34,7 @@ func RegisterRoutes(
 	loginLockThreshold int,
 	loginLockTTL time.Duration,
 	pdfRateLimitPerHour int,
+	pdfDownloadTokenTTL time.Duration,
 	uploadMaxBytes int,
 	uploadMIMEWhitelist []string,
 	cookieDomain string,
@@ -46,6 +47,7 @@ func RegisterRoutes(
 		maxResumes,
 		redisClient,
 		pdfRateLimitPerHour,
+		pdfDownloadTokenTTL,
 	)
 	authHandler := NewAuthHandler(
 		db,
@@ -77,6 +79,9 @@ func RegisterRoutes(
 
 		v1.GET("/resume/print/:id", middleware.InternalSecretMiddleware(resumeHandler.internalSecret), resumeHandler.GetPrintResumeData)
 		v1.GET("/templates/print/:id", middleware.InternalSecretMiddleware(templateHandler.internalSecret), templateHandler.GetPrintTemplateData)
+
+		// PDF 下载中转（不依赖 Authorization Header，依赖短时效一次性 Token）
+		v1.GET("/resume/:id/download-file", resumeHandler.DownloadResumeFile)
 
 		resumeGroup := v1.Group("/resume")
 		resumeGroup.Use(authMiddleware, middleware.RequirePasswordChangeCompletedMiddleware())

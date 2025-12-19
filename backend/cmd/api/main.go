@@ -112,6 +112,7 @@ func main() {
 		cfg.API.LoginLockThreshold,
 		cfg.API.LoginLockTTL,
 		cfg.API.PdfRateLimitPerHour,
+		cfg.API.PdfDownloadTokenTTL,
 		cfg.API.UploadMaxBytes,
 		cfg.API.UploadMIMEWhitelist,
 		cfg.API.CookieDomain,

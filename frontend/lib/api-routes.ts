@@ -30,6 +30,18 @@ export const API_ROUTES = {
     delete: (id: number | string) => joinUrl(API_BASE, `${API_ROOT}/resume/${id}`),
     download: (id: number | string) => joinUrl(API_BASE, `${API_ROOT}/resume/${id}/download`),
     downloadLink: (id: number | string) => joinUrl(API_BASE, `${API_ROOT}/resume/${id}/download-link`),
+    downloadFile: (
+      id: number | string,
+      params: { uid: number | string; token: string; download?: "1"; filename?: string },
+    ) => {
+      const search = new URLSearchParams();
+      search.set("uid", String(params.uid));
+      search.set("token", params.token);
+      if (params.download === "1") search.set("download", "1");
+      if (params.filename) search.set("filename", params.filename);
+      const path = `${API_ROOT}/resume/${id}/download-file?${search.toString()}`;
+      return joinUrl(API_BASE, path);
+    },
   },
   ASSETS: {
     list: (params?: { limit?: number }) => {

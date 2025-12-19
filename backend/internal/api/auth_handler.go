@@ -127,9 +127,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	// 速率限制：每 IP+用户名 每小时 10 次
 	rateKey := "rate:login:" + ip + ":" + strings.ToLower(req.Username) + ":" + time.Now().UTC().Format("2006010215")
-	count, _ := h.redis.Incr(ctx, rateKey).Result()
-	if count == 1 {
-		_ = h.redis.Expire(ctx, rateKey, time.Hour).Err()
+	count, err := incrWithTTL(ctx, h.redis, rateKey, time.Hour)
+	if err != nil {
+		count = 0
 	}
 	if count > int64(h.loginRateLimitPerHour) {
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
