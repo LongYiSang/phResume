@@ -27,6 +27,9 @@ import { useAuth } from "@/context/AuthContext";
 import { ActiveEditorProvider } from "@/context/ActiveEditorContext";
 import { useAlertModal } from "@/context/AlertModalContext";
 import { useAuthFetch, friendlyMessageForStatus } from "@/hooks/useAuthFetch";
+import { useRefState } from "@/hooks/useRefState";
+import { useErrorHandler } from "@/hooks/useErrorHandler";
+import { usePanelState } from "@/hooks/usePanelState";
 import { Move } from "lucide-react";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button } from "@heroui/react";
 import {
@@ -73,12 +76,13 @@ export default function Home() {
   const { accessToken, setAccessToken, isAuthenticated, isCheckingAuth } = useAuth();
   const authFetch = useAuthFetch();
   const { showAlert } = useAlertModal();
+  const errorHandler = useErrorHandler();
+  const panels = usePanelState();
   const [title, setTitle] = useState("");
-  const [resumeData, setResumeData] = useState<ResumeData | null>(null);
-  const [savedResumeId, setSavedResumeId] = useState<number | null>(null);
+  const [resumeData, setResumeData, resumeDataRef] = useRefState<ResumeData | null>(null);
+  const [savedResumeId, setSavedResumeId, savedResumeIdRef] = useRefState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingResume, setIsFetchingResume] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [taskStatus, setTaskStatus] = useState<TaskStatus>("idle");
   const [readyResumeId, setReadyResumeId] = useState<number | null>(null);
   const [downloadDeadline, setDownloadDeadline] = useState<number | null>(null);
@@ -87,13 +91,8 @@ export default function Home() {
   const [downloadUid, setDownloadUid] = useState<number | null>(null);
   const countdownTimerRef = useRef<number | null>(null);
   const generationCorrelationIdRef = useRef<string | null>(null);
-  const savedResumeIdRef = useRef<number | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [isUploadingAsset, setIsUploadingAsset] = useState(false);
-  const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
-  const [isMyResumesOpen, setIsMyResumesOpen] = useState(false);
-  const [isAssetsOpen, setIsAssetsOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [assetPanelRefreshToken, setAssetPanelRefreshToken] = useState(0);
   const [zoom, setZoom] = useState(1);
   const socketRef = useRef<WebSocket | null>(null);
@@ -102,24 +101,14 @@ export default function Home() {
   const reconnectAttemptsRef = useRef(0);
   const previewWindowRef = useRef<Window | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  // 全局撤销/重做（不包含文本框内字符级编辑）
-  const [historyStack, setHistoryStack] = useState<ResumeData[]>([]);
-  const [redoStack, setRedoStack] = useState<ResumeData[]>([]);
-  // 便于在回调中访问最新状态的 ref
-  const resumeDataRef = useRef<ResumeData | null>(null);
-  const historyRef = useRef<ResumeData[]>([]);
-  const redoRef = useRef<ResumeData[]>([]);
-  // 交互起始快照（拖拽/缩放）
+  const [historyStack, setHistoryStack, historyRef] = useRefState<ResumeData[]>([]);
+  const [redoStack, setRedoStack, redoRef] = useRefState<ResumeData[]>([]);
   const interactionStartSnapshotRef = useRef<ResumeData | null>(null);
-  // 拖拽/缩放标记
   const isDraggingRef = useRef(false);
   const isResizingRef = useRef(false);
   const [generationProgress, setGenerationProgress] = useState(0);
   const [isOverlayVisible, setIsOverlayVisible] = useState(false);
   const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const [isRateLimitModalOpen, setIsRateLimitModalOpen] = useState(false);
-  const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
-  const [rateLimitError, setRateLimitError] = useState<string | null>(null);
 
   useEffect(() => {
     savedResumeIdRef.current = savedResumeId;
@@ -253,17 +242,6 @@ export default function Home() {
     [isAuthenticated, savedResumeId, title, authFetch],
   );
 
-  useEffect(() => {
-    resumeDataRef.current = resumeData;
-  }, [resumeData]);
-  useEffect(() => {
-    historyRef.current = historyStack;
-  }, [historyStack]);
-  useEffect(() => {
-    redoRef.current = redoStack;
-  }, [redoStack]);
-
-  // 统一的历史入栈包裹器：对变更前状态拍快照 -> 清空 redo -> 应用变更
   const withHistory = useCallback(
     (updater: (prev: ResumeData) => ResumeData) => {
       setResumeData((prev) => {
@@ -303,12 +281,12 @@ export default function Home() {
   const requestDownloadLink = useCallback(
     async (resumeId: number, forceDownload = false) => {
       if (!isAuthenticated) {
-        setError("请先登录");
+        errorHandler.setError("请先登录");
         resetDownloadLinkState();
         return;
       }
 
-      setError(null);
+      errorHandler.clearError();
 
       try {
         const url = new URL(API_ROUTES.RESUME.downloadLink(resumeId), window.location.origin);
@@ -336,10 +314,10 @@ export default function Home() {
       } catch (err) {
         console.error("获取下载链接失败", err);
         resetDownloadLinkState();
-        setError("获取下载链接失败，请稍后重试");
+        errorHandler.setError("获取下载链接失败，请稍后重试");
       }
     },
-    [isAuthenticated, authFetch, resetDownloadLinkState, startDownloadCountdown],
+    [isAuthenticated, authFetch, resetDownloadLinkState, startDownloadCountdown, errorHandler],
   );
 
   const handleRequestDownloadLink = useCallback(async () => {
@@ -350,7 +328,7 @@ export default function Home() {
   const handleDownloadFile = useCallback(() => {
     if (!readyResumeId) return;
     if (!downloadToken || !downloadUid || downloadCountdown <= 0) {
-      setError("下载链接已过期，请重新获取");
+      errorHandler.setError("下载链接已过期，请重新获取");
       return;
     }
 
@@ -549,7 +527,7 @@ export default function Home() {
     }
 
     setIsFetchingResume(true);
-    setError(null);
+    errorHandler.clearError();
 
     try {
       const response = await authFetch(API_ROUTES.RESUME.latest());
@@ -567,7 +545,7 @@ export default function Home() {
       });
     } catch (err) {
       console.error("加载最新简历失败", err);
-      setError("加载最新简历失败，请稍后重试");
+      errorHandler.setError("加载最新简历失败，请稍后重试");
     } finally {
       setIsFetchingResume(false);
     }
@@ -580,21 +558,21 @@ export default function Home() {
   }, [isAuthenticated, isCheckingAuth, fetchLatestResume]);
 
   const handleSave = async () => {
-    setError(null);
+    errorHandler.clearError();
 
     if (!isAuthenticated) {
-      setError("请先登录");
+      errorHandler.setError("请先登录");
       return;
     }
 
     if (!resumeData) {
-      setError("简历内容尚未加载完成");
+      errorHandler.setError("简历内容尚未加载完成");
       return;
     }
     // 保存前校验重叠
     const currentOverlap = calcOverlapIds(resumeData.items);
     if (currentOverlap.size > 0) {
-      setError("存在重叠模块，无法保存，请调整位置后重试。");
+      errorHandler.setError("存在重叠模块，无法保存，请调整位置后重试。");
       return;
     }
 
@@ -610,14 +588,14 @@ export default function Home() {
         }
         targetTitle = inputTitle.trim();
         if (!targetTitle) {
-          setError("简历标题不能为空");
+          errorHandler.setError("简历标题不能为空");
           return;
         }
         endpoint = API_ROUTES.RESUME.create();
         method = "POST";
       } else {
         if (!targetTitle) {
-          setError("简历标题不能为空");
+          errorHandler.setError("简历标题不能为空");
           return;
         }
         endpoint = API_ROUTES.RESUME.update(resumeIdForUpdate);
@@ -637,7 +615,7 @@ export default function Home() {
 
       if (!response.ok) {
         if (response.status === 403 && resumeIdForUpdate === null) {
-          setError("已达简历保存上限，请升级会员。");
+          errorHandler.setError("已达简历保存上限，请升级会员。");
           return;
         }
         throw new Error("保存失败");
@@ -657,7 +635,7 @@ export default function Home() {
       setTaskStatus("idle");
     } catch (err) {
       console.error("保存失败", err);
-      setError("保存失败，请重试");
+      errorHandler.setError("保存失败，请重试");
     } finally {
       setIsLoading(false);
     }
@@ -669,18 +647,15 @@ export default function Home() {
     }
 
     if (!isAuthenticated) {
-      setError("请先登录");
+      errorHandler.setError("请先登录");
       return;
     }
 
-    setError(null);
+    errorHandler.clearError();
     generationCorrelationIdRef.current = null;
     setReadyResumeId(null);
     resetDownloadLinkState();
     setTaskStatus("pending");
-    // 不再预开标签，改为等待生成完成后由用户点击下载
-
-    // 不再主动轮询，等待 WebSocket 完成消息后再打开最新 PDF
 
     try {
       const response = await authFetch(
@@ -690,17 +665,13 @@ export default function Home() {
       if (!response.ok) {
         const msg = friendlyMessageForStatus(response.status, "pdf");
         if (response.status === 429) {
-          setRateLimitMessage(msg);
-          setRateLimitError("下载失败");
-          setIsRateLimitModalOpen(true);
-          setError(null);
+          errorHandler.showRateLimitModal(msg, "下载失败");
         } else {
-          setError(msg);
+          errorHandler.setError(msg);
         }
         throw new Error("下载失败");
       }
 
-      // 生成任务已提交，待 WebSocket 完成后展示下载按钮
       try {
         const data = await response.json();
         const correlationId =
@@ -717,8 +688,8 @@ export default function Home() {
       }
     } catch (err) {
       console.error("生成任务提交失败", err);
-      if (!isRateLimitModalOpen) {
-        setError((prev) => prev ?? "生成任务提交失败，请稍后重试");
+      if (!errorHandler.isRateLimitModalOpen) {
+        errorHandler.setError((prev) => prev ?? "生成任务提交失败，请稍后重试");
       }
       resetPdfGenerationState();
     }
@@ -1264,7 +1235,7 @@ export default function Home() {
 
   const handleAddSectionTitle = useCallback(() => {
     if (!resumeData) {
-      setError("简历内容尚未加载完成");
+      errorHandler.setError("简历内容尚未加载完成");
       return;
     }
     const defaultW = 24;
@@ -1293,7 +1264,7 @@ export default function Home() {
 
   const handleAddText = useCallback(() => {
     if (!resumeData) {
-      setError("简历内容尚未加载完成");
+      errorHandler.setError("简历内容尚未加载完成");
       return;
     }
     const defaultW = 12;
@@ -1321,7 +1292,7 @@ export default function Home() {
 
   const handleAddDivider = useCallback(() => {
     if (!resumeData) {
-      setError("简历内容尚未加载完成");
+      errorHandler.setError("简历内容尚未加载完成");
       return;
     }
 
@@ -1346,23 +1317,15 @@ export default function Home() {
 
   const handleAddImageClick = useCallback(() => {
     if (!resumeData) {
-      setError("简历内容尚未加载完成");
+      errorHandler.setError("简历内容尚未加载完成");
       return;
     }
     if (!isAuthenticated) {
-      setError("请先登录");
+      errorHandler.setError("请先登录");
       return;
     }
-    setIsAssetsOpen((prev) => {
-      const next = !prev;
-      if (next) {
-        setIsTemplatesOpen(false);
-        setIsMyResumesOpen(false);
-        setIsSettingsOpen(false);
-      }
-      return next;
-    });
-  }, [resumeData, isAuthenticated]);
+    panels.togglePanel('assets');
+  }, [resumeData, isAuthenticated, errorHandler, panels]);
 
   const handleRequestAssetUpload = useCallback(() => {
     fileInputRef.current?.click();
@@ -1376,18 +1339,18 @@ export default function Home() {
       }
 
       if (!isAuthenticated) {
-        setError("请先登录");
+        errorHandler.setError("请先登录");
         event.target.value = "";
         return;
       }
 
       if (!resumeDataRef.current) {
-        setError("简历内容尚未加载完成");
+        errorHandler.setError("简历内容尚未加载完成");
         event.target.value = "";
         return;
       }
 
-      setError(null);
+      errorHandler.clearError();
       setIsUploadingAsset(true);
 
       const formData = new FormData();
@@ -1411,10 +1374,10 @@ export default function Home() {
               title: "上传上限",
               message: `您已达到最大上传数量限制（${4}张），请一段时间后再尝试上传`,
             });
-            setError(null);
+            errorHandler.clearError();
             throw new Error("asset limit reached");
           }
-          setError(friendlyMessageForStatus(response.status, "upload"));
+          errorHandler.setError(friendlyMessageForStatus(response.status, "upload"));
           throw new Error("upload failed");
         }
 
@@ -1432,7 +1395,7 @@ export default function Home() {
           console.error("图片上传失败", err);
         }
         if (String((err as Error | undefined)?.message ?? "") !== "asset limit reached") {
-          setError((prev) => prev ?? "图片上传失败，请重试");
+          errorHandler.setError((prev) => prev ?? "图片上传失败，请重试");
         }
       } finally {
         setIsUploadingAsset(false);
@@ -1445,17 +1408,17 @@ export default function Home() {
   const handleSelectAssetFromPanel = useCallback(
     (objectKey: string) => {
       if (!isAuthenticated) {
-        setError("请先登录");
+        errorHandler.setError("请先登录");
         return;
       }
       if (!resumeDataRef.current) {
-        setError("简历内容尚未加载完成");
+        errorHandler.setError("简历内容尚未加载完成");
         return;
       }
       appendImageItem(objectKey);
-      setIsAssetsOpen(false);
+      panels.closeAllPanels();
     },
-    [appendImageItem, isAuthenticated],
+    [appendImageItem, isAuthenticated, errorHandler, panels],
   );
 
   const handleSelectItem = useCallback((itemId: string) => {
@@ -1578,16 +1541,16 @@ export default function Home() {
         
         <PDFGenerationOverlay isVisible={isOverlayVisible} progress={generationProgress} />
 
-        <Modal isOpen={isRateLimitModalOpen} onOpenChange={setIsRateLimitModalOpen}>
+        <Modal isOpen={errorHandler.isRateLimitModalOpen} onOpenChange={(open) => errorHandler.setIsRateLimitModalOpen(open)}>
           <ModalContent>
             {(onClose) => (
               <>
                 <ModalHeader>生成次数上限</ModalHeader>
                 <ModalBody>
                   <div className="space-y-2">
-                    <div className="text-sm text-kawaii-text">{rateLimitMessage ?? "生成过于频繁，请稍后再试"}</div>
+                    <div className="text-sm text-kawaii-text">{errorHandler.rateLimitMessage ?? "生成过于频繁，请稍后再试"}</div>
                     <div className="text-xs text-slate-500">错误类型：Console Error</div>
-                    <div className="text-xs text-slate-500">错误信息：{rateLimitError ?? "下载失败"}</div>
+                    <div className="text-xs text-slate-500">错误信息：{errorHandler.rateLimitError ?? "下载失败"}</div>
                     <div className="text-xs text-slate-500">错误位置：handleDownload (app/page.tsx:664:15)</div>
                     <div className="text-xs text-slate-500">Next.js 版本：16.0.1 (Turbopack)</div>
                   </div>
@@ -1615,42 +1578,12 @@ export default function Home() {
             onAddSectionTitle={handleAddSectionTitle}
             onAddImage={handleAddImageClick}
             onAddDivider={handleAddDivider}
-            onOpenTemplates={() =>
-              setIsTemplatesOpen((prev) => {
-                const next = !prev;
-                if (next) {
-                  setIsMyResumesOpen(false);
-                  setIsAssetsOpen(false);
-                  setIsSettingsOpen(false);
-                }
-                return next;
-              })
-            }
-            onOpenMyResumes={() =>
-              setIsMyResumesOpen((prev) => {
-                const next = !prev;
-                if (next) {
-                  setIsTemplatesOpen(false);
-                  setIsAssetsOpen(false);
-                  setIsSettingsOpen(false);
-                }
-                return next;
-              })
-            }
-            onOpenSettings={() =>
-              setIsSettingsOpen((prev) => {
-                const next = !prev;
-                if (next) {
-                  setIsTemplatesOpen(false);
-                  setIsMyResumesOpen(false);
-                  setIsAssetsOpen(false);
-                }
-                return next;
-              })
-            }
+            onOpenTemplates={() => panels.togglePanel('templates')}
+            onOpenMyResumes={() => panels.togglePanel('myResumes')}
+            onOpenSettings={() => panels.togglePanel('settings')}
             onLogout={handleLogout}
-            assetsActive={isAssetsOpen}
-            settingsActive={isSettingsOpen}
+            assetsActive={panels.isAssetsOpen}
+            settingsActive={panels.isSettingsOpen}
             disabled={!resumeData}
             onToggleWatermark={() => {
               if (!resumeData) return;
@@ -1963,30 +1896,30 @@ export default function Home() {
 
       
 
-      {error && !isRateLimitModalOpen && (
-        <div className="rounded-md bg-red-100 px-4 py-2 text-sm text-red-700 dark:bg-red-900/40 dark:text-red-200">
-          {error}
-        </div>
-      )}
+      {errorHandler.error && !errorHandler.isRateLimitModalOpen && (
+          <div className="rounded-md bg-red-100 px-4 py-2 text-sm text-red-700 dark:bg-red-900/40 dark:text-red-200">
+            {errorHandler.error}
+          </div>
+        )}
 
       <TemplatesPanel
-        isOpen={isTemplatesOpen}
-        onClose={() => setIsTemplatesOpen(false)}
+        isOpen={panels.isTemplatesOpen}
+        onClose={() => panels.closeAllPanels()}
         accessToken={accessToken}
         currentResumeData={resumeData}
         onApply={replaceResumeData}
       />
       <MyResumesPanel
-        isOpen={isMyResumesOpen}
-        onClose={() => setIsMyResumesOpen(false)}
+        isOpen={panels.isMyResumesOpen}
+        onClose={() => panels.closeAllPanels()}
         accessToken={accessToken}
         currentResumeData={resumeData}
         onResumeSelected={handlePanelResumeSelected}
         onResumeDeleted={handlePanelResumeDeleted}
       />
       <AssetsPanel
-        isOpen={isAssetsOpen}
-        onClose={() => setIsAssetsOpen(false)}
+        isOpen={panels.isAssetsOpen}
+        onClose={() => panels.closeAllPanels()}
         accessToken={accessToken}
         onSelectAsset={handleSelectAssetFromPanel}
         onRequestUpload={handleRequestAssetUpload}
@@ -1994,8 +1927,8 @@ export default function Home() {
         refreshToken={assetPanelRefreshToken}
       />
       <SettingsPanel
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+        isOpen={panels.isSettingsOpen}
+        onClose={() => panels.closeAllPanels()}
         layoutSettings={resumeData?.layout_settings}
         onSettingsChange={handleSettingsChange}
       />
