@@ -6,21 +6,18 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
 } from "react";
 import { useRouter } from "next/navigation";
-import RGL, { type Layout } from "react-grid-layout";
-import { PageContainer } from "@/components/PageContainer";
+import type { Layout } from "react-grid-layout";
 import Inspector from "@/components/Inspector";
 import Dock from "@/components/Dock";
-import { TextItem } from "@/components/TextItem";
-import { SectionTitleItem } from "@/components/SectionTitleItem";
-import { DividerItem } from "@/components/DividerItem";
-import { ImageItem } from "@/components/ImageItem";
 import { TemplatesPanel } from "@/components/TemplatesPanel";
 import { MyResumesPanel } from "@/components/MyResumesPanel";
 import { AssetsPanel } from "@/components/AssetsPanel";
 import { SettingsPanel } from "@/components/SettingsPanel";
+import ResumeCanvas from "@/components/ResumeCanvas";
+import { RateLimitModal } from "@/components/RateLimitModal";
+import { PDFGenerationOverlay } from "@/components/PDFGenerationOverlay";
 import { useAuth } from "@/context/AuthContext";
 import { ActiveEditorProvider } from "@/context/ActiveEditorContext";
 import { useAlertModal } from "@/context/AlertModalContext";
@@ -30,31 +27,21 @@ import { usePdfDownload } from "@/hooks/usePdfDownload";
 import { useResumeActions } from "@/hooks/useResumeActions";
 import { useResumeEditor } from "@/hooks/useResumeEditor";
 import { useWebSocketConnection } from "@/hooks/useWebSocketConnection";
-import { Move } from "lucide-react";
-import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button } from "@heroui/react";
 import {
   DEFAULT_LAYOUT_SETTINGS,
   GRID_COLS,
   GRID_ROW_HEIGHT,
 } from "@/utils/resume";
-import {
-  DEFAULT_CELL_PADDING_PX,
-  DEFAULT_CELL_RADIUS_PX,
-  IMAGE_CELL_PADDING_PX,
-} from "@/utils/editorStyles";
 import { API_ROUTES } from "@/lib/api-routes";
-import { applyOpacityToColor, extractBackgroundStyle } from "@/utils/color";
 import {
   calcOverlapIds,
 } from "@/utils/resumeItemUtils";
-import type { LayoutSettings, ResumeItemStyle } from "@/types/resume";
-
-import { Watermark } from "@/components/Watermark";
-
-import { PDFGenerationOverlay } from "@/components/PDFGenerationOverlay";
+import type { LayoutSettings } from "@/types/resume";
 
 const CANVAS_WIDTH = 794; // 必须与 pdf_template.go (794px) 匹配
 const CANVAS_HEIGHT = Math.round((CANVAS_WIDTH * 297) / 210);
+
+type PanelKey = "templates" | "myResumes" | "assets" | "settings";
 
 export default function Home() {
   const router = useRouter();
@@ -136,7 +123,6 @@ export default function Home() {
     title,
     setTitle,
     savedResumeId,
-    savedResumeIdRef,
     isFetchingResume,
     isUploadingAsset,
     fetchLatestResume,
@@ -243,24 +229,17 @@ export default function Home() {
     return calcOverlapIds(resumeData.items);
   }, [resumeData]);
 
+  const togglePanel = useCallback((panel: PanelKey) => {
+    setIsTemplatesOpen((prev) => (panel === "templates" ? !prev : false));
+    setIsMyResumesOpen((prev) => (panel === "myResumes" ? !prev : false));
+    setIsAssetsOpen((prev) => (panel === "assets" ? !prev : false));
+    setIsSettingsOpen((prev) => (panel === "settings" ? !prev : false));
+  }, []);
+
   const handleAddImagePanelToggle = useCallback(() => {
     if (!handleAddImageClick()) return;
-    setIsAssetsOpen((prev) => {
-      const next = !prev;
-      if (next) {
-        setIsTemplatesOpen(false);
-        setIsMyResumesOpen(false);
-        setIsSettingsOpen(false);
-      }
-      return next;
-    });
-  }, [
-    handleAddImageClick,
-    setIsAssetsOpen,
-    setIsTemplatesOpen,
-    setIsMyResumesOpen,
-    setIsSettingsOpen,
-  ]);
+    togglePanel("assets");
+  }, [handleAddImageClick, togglePanel]);
 
   const handleRequestAssetUpload = useCallback(() => {
     fileInputRef.current?.click();
@@ -279,113 +258,58 @@ export default function Home() {
   return (
     <ActiveEditorProvider>
       <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-6 py-12">
-        
         <PDFGenerationOverlay
           isVisible={pdf.isOverlayVisible}
           progress={pdf.generationProgress}
         />
 
-        <Modal
+        <RateLimitModal
           isOpen={pdf.isRateLimitModalOpen}
           onOpenChange={pdf.setIsRateLimitModalOpen}
-        >
-          <ModalContent>
-            {(onClose) => (
-              <>
-                <ModalHeader>生成次数上限</ModalHeader>
-                <ModalBody>
-                  <div className="space-y-2">
-                    <div className="text-sm text-kawaii-text">
-                      {pdf.rateLimitMessage ?? "生成过于频繁，请稍后再试"}
-                    </div>
-                    <div className="text-xs text-slate-500">错误类型：Console Error</div>
-                    <div className="text-xs text-slate-500">
-                      错误信息：{pdf.rateLimitError ?? "下载失败"}
-                    </div>
-                    <div className="text-xs text-slate-500">错误位置：handleDownload (hooks/usePdfDownload.ts)</div>
-                    <div className="text-xs text-slate-500">Next.js 版本：16.0.1 (Turbopack)</div>
-                  </div>
-                </ModalBody>
-                <ModalFooter>
-                  <Button color="primary" onPress={onClose}>知道了</Button>
-                </ModalFooter>
-              </>
-            )}
-          </ModalContent>
-        </Modal>
+          message={pdf.rateLimitMessage}
+          error={pdf.rateLimitError}
+        />
 
-      {isFetchingResume && (
-        <div className="text-sm text-zinc-500 dark:text-zinc-400">
-          正在加载最新简历...
-        </div>
-      )}
+        {isFetchingResume && (
+          <div className="text-sm text-zinc-500 dark:text-zinc-400">
+            正在加载最新简历...
+          </div>
+        )}
 
-      
+        <div className="relative">
+          <div className="fixed left-6 inset-y-0 z-40 flex items-center">
+            <Dock
+              onAddText={handleAddText}
+              onAddSectionTitle={handleAddSectionTitle}
+              onAddImage={handleAddImagePanelToggle}
+              onAddDivider={handleAddDivider}
+              onOpenTemplates={() => togglePanel("templates")}
+              onOpenMyResumes={() => togglePanel("myResumes")}
+              onOpenSettings={() => togglePanel("settings")}
+              onLogout={handleLogout}
+              assetsActive={isAssetsOpen}
+              settingsActive={isSettingsOpen}
+              disabled={!resumeData}
+              onToggleWatermark={() => {
+                if (!resumeData) return;
+                const newSettings = {
+                  ...resumeData.layout_settings,
+                  enable_watermark: !resumeData.layout_settings.enable_watermark,
+                };
+                editor.setResumeData({
+                  ...resumeData,
+                  layout_settings: newSettings,
+                });
+                // 自动保存
+                saveResume(resumeData.items, newSettings);
+              }}
+              watermarkEnabled={resumeData?.layout_settings.enable_watermark}
+            />
+          </div>
 
-      <div className="relative">
-        <div className="fixed left-6 inset-y-0 z-40 flex items-center">
-          <Dock
-            onAddText={handleAddText}
-            onAddSectionTitle={handleAddSectionTitle}
-            onAddImage={handleAddImagePanelToggle}
-            onAddDivider={handleAddDivider}
-            onOpenTemplates={() =>
-              setIsTemplatesOpen((prev) => {
-                const next = !prev;
-                if (next) {
-                  setIsMyResumesOpen(false);
-                  setIsAssetsOpen(false);
-                  setIsSettingsOpen(false);
-                }
-                return next;
-              })
-            }
-            onOpenMyResumes={() =>
-              setIsMyResumesOpen((prev) => {
-                const next = !prev;
-                if (next) {
-                  setIsTemplatesOpen(false);
-                  setIsAssetsOpen(false);
-                  setIsSettingsOpen(false);
-                }
-                return next;
-              })
-            }
-            onOpenSettings={() =>
-              setIsSettingsOpen((prev) => {
-                const next = !prev;
-                if (next) {
-                  setIsTemplatesOpen(false);
-                  setIsMyResumesOpen(false);
-                  setIsAssetsOpen(false);
-                }
-                return next;
-              })
-            }
-            onLogout={handleLogout}
-            assetsActive={isAssetsOpen}
-            settingsActive={isSettingsOpen}
-            disabled={!resumeData}
-            onToggleWatermark={() => {
-              if (!resumeData) return;
-              const newSettings = {
-                ...resumeData.layout_settings,
-                enable_watermark: !resumeData.layout_settings.enable_watermark,
-              };
-              editor.setResumeData({
-                ...resumeData,
-                layout_settings: newSettings,
-              });
-              // 自动保存
-              saveResume(resumeData.items, newSettings);
-            }}
-            watermarkEnabled={resumeData?.layout_settings.enable_watermark}
-          />
-        </div>
-
-        <div className="fixed right-6 top-1/2 -translate-y-1/2 z-40 w-80 " >
-          {resumeData && (
-          <Inspector
+          <div className="fixed right-6 top-1/2 -translate-y-1/2 z-40 w-80">
+            {resumeData && (
+              <Inspector
               title={title}
               onUpdateTitle={setTitle}
               onSave={handleSave}
@@ -406,12 +330,12 @@ export default function Home() {
                   : null
               }
               onSelectedItemFontSizeChange={handleItemFontSizeChange}
-            selectedItemColor={
-              selectedItem?.type === "text" || selectedItem?.type === "divider"
-                ? selectedItemColor
-                : null
-            }
-            onSelectedItemColorChange={handleItemColorChange}
+              selectedItemColor={
+                selectedItem?.type === "text" || selectedItem?.type === "divider"
+                  ? selectedItemColor
+                  : null
+              }
+              onSelectedItemColorChange={handleItemColorChange}
               selectedItemLineHeight={
                 selectedItem?.type === "text" || selectedItem?.type === "section_title"
                   ? selectedItemLineHeight
@@ -465,8 +389,8 @@ export default function Home() {
               taskStatus={pdf.taskStatus}
               downloadCountdown={pdf.downloadCountdown}
             />
-          )}
-        </div>
+            )}
+          </div>
 
         <input
           ref={fileInputRef}
@@ -479,168 +403,26 @@ export default function Home() {
         <div className="min-h-screen flex items-start justify-center px-[120px]">
           <div className="w-full max-w-5xl rounded-[32px] border border-white/60 bg-white/60 p-6 shadow-card backdrop-blur-xl">
             {resumeData ? (
-              <div className="overflow-x-auto">
-                <PageContainer
-                  width={scaledCanvasWidth}
-                  height={scaledCanvasHeight}
-                  style={{
-                    fontFamily: resumeData.layout_settings.font_family,
-                    fontSize: `${resumeData.layout_settings.font_size_pt}pt`,
-                    color: resumeData.layout_settings.accent_color,
-                    padding: `${resumeData.layout_settings.margin_px}px`,
-                  }}
-                >
-                  <RGL
-                    className="h-full w-full"
-                    layout={layout}
-                    cols={currentColumns}
-                    rowHeight={currentRowHeight}
-                    compactType={null}
-                    preventCollision
-                    draggableHandle=".rgl-drag-handle"
-                    draggableCancel=".text-item-editor"
-                    width={innerCanvasWidth}
-                    autoSize={false}
-                    style={{ height: "100%" }}
-                    margin={[0, 0]}
-                    containerPadding={[0, 0]}
-                    maxRows={Math.floor(innerCanvasHeight / currentRowHeight)}
-                    onLayoutChange={handleLayoutChange}
-                    onDragStart={handleDragStart}
-                    onDragStop={handleDragStop}
-                    onResizeStart={handleResizeStart}
-                    onResizeStop={handleResizeStop}
-                  >
-                    {resumeData.items.map((item) => {
-                      const isSelected = selectedItemId === item.id;
-                      const isOverlapped = overlapIds.has(item.id);
-                      const baseStyle = {
-                        fontSize: `${resumeData.layout_settings.font_size_pt}pt`,
-                        color: resumeData.layout_settings.accent_color,
-                        ...(item.style ?? {}),
-                      };
-
-                      const { borderColor: _dc, color: _dcolor, ...restDividerStyle } =
-                        (item.style ?? {}) as Record<string, unknown>;
-                      const dividerStyle = {
-                        ...(restDividerStyle as ResumeItemStyle),
-                      };
-
-                      const backgroundMeta = extractBackgroundStyle(item.style);
-                      const resolvedBackgroundColor = applyOpacityToColor(
-                        backgroundMeta.color,
-                        backgroundMeta.opacity,
-                      );
-                      const hasCustomBackground = Boolean(backgroundMeta.color);
-                      const borderColor = isOverlapped
-                        ? "#ef4444"
-                        : isSelected
-                          ? "#a855f7"
-                          : hasCustomBackground
-                            ? "rgba(255,255,255,0.7)"
-                            : "rgba(226, 232, 240, 0.9)";
-                      const isSectionTitle = item.type === "section_title";
-                      const isInteractive = isSelected || isOverlapped;
-                      
-                      const cellStyle: CSSProperties = {
-                        padding:
-                          item.type === "image"
-                            ? `${IMAGE_CELL_PADDING_PX}px`
-                            : `${DEFAULT_CELL_PADDING_PX}px`,
-                        // 仅当有自定义背景时才应用背景色，否则由 CSS 类控制（默认透明，hover/active 变白）
-                        backgroundColor: isSectionTitle
-                          ? "transparent"
-                          : hasCustomBackground 
-                            ? (resolvedBackgroundColor ?? undefined)
-                            : undefined,
-                        ["--cell-bg" as unknown as string]: isSectionTitle
-                          ? "transparent"
-                          : resolvedBackgroundColor ?? "rgba(255,255,255,0.92)",
-                        borderColor,
-                        borderStyle: hasCustomBackground ? "solid" : "dashed",
-                        borderWidth: isInteractive ? 2 : 1,
-                        borderRadius: `${DEFAULT_CELL_RADIUS_PX}px`,
-                        transition:
-                          "border 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease",
-                      };
-
-                      return (
-                        <div
-                          key={item.id}
-                          className={`group relative h-full w-full border text-sm text-zinc-900 shadow-sm transition-all hover-glass ${
-                            item.type === "image" ? "overflow-hidden" : ""
-                          } ${
-                            isOverlapped
-                              ? "ring-2 ring-red-400 active-glass"
-                              : isSelected
-                                ? "ring-2 ring-kawaii-purple/40 active-glass"
-                                : ""
-                          }`}
-                          onMouseDownCapture={() => handleSelectItem(item.id)}
-                          onFocus={() => handleSelectItem(item.id)}
-                          tabIndex={0}
-                          style={cellStyle}
-                        >
-                          {isOverlapped && (
-                            <div className="absolute left-2 top-2 rounded bg-red-500/90 px-1.5 py-0.5 text-[10px] text-white shadow">
-                              重叠
-                            </div>
-                          )}
-                          <div className="rgl-drag-handle absolute -top-1.5 right-0.5 flex items-center justify-center w-4 h-4 rounded-[6px] border border-zinc-300 bg-white/90 text-zinc-500 shadow-sm cursor-move">
-                            <Move size={9} />
-                          </div>
-
-                          {item.type === "text" && (
-                            <TextItem
-                              html={item.content}
-                              style={baseStyle}
-                              onChange={(newHtml) =>
-                                handleContentChange(item.id, newHtml)
-                              }
-                            />
-                          )}
-
-                          {item.type === "section_title" && (
-                            <SectionTitleItem
-                              html={item.content}
-                              style={baseStyle}
-                              onChange={(newHtml) =>
-                                handleContentChange(item.id, newHtml)
-                              }
-                              accentColor={resumeData.layout_settings.accent_color}
-                            />
-                          )}
-
-                          {item.type === "divider" && (
-                            <DividerItem style={dividerStyle} />
-                          )}
-
-                          {item.type === "image" && (
-                            <ImageItem
-                              objectKey={item.content}
-                              style={item.style as CSSProperties}
-                            />
-                          )}
-
-                          {item.type !== "text" &&
-                            item.type !== "divider" &&
-                            item.type !== "image" &&
-                            item.type !== "section_title" && (
-                              <div className="text-xs text-red-500">
-                                暂不支持的类型：{item.type}
-                              </div>
-                            )}
-                        </div>
-                      );
-                    })}
-                  </RGL>
-                  <div 
-                    className="print-mask" 
-                    style={{ padding: `${layoutMarginPx}px` }}
-                  />
-                  {resumeData.layout_settings.enable_watermark && <Watermark />}
-                </PageContainer>
-              </div>
+              <ResumeCanvas
+                resumeData={resumeData}
+                selectedItemId={selectedItemId}
+                layout={layout}
+                currentColumns={currentColumns}
+                currentRowHeight={currentRowHeight}
+                scaledCanvasWidth={scaledCanvasWidth}
+                scaledCanvasHeight={scaledCanvasHeight}
+                innerCanvasWidth={innerCanvasWidth}
+                innerCanvasHeight={innerCanvasHeight}
+                layoutMarginPx={layoutMarginPx}
+                overlapIds={overlapIds}
+                onLayoutChange={handleLayoutChange}
+                onDragStart={handleDragStart}
+                onDragStop={handleDragStop}
+                onResizeStart={handleResizeStart}
+                onResizeStop={handleResizeStop}
+                onSelectItem={handleSelectItem}
+                onContentChange={handleContentChange}
+              />
             ) : (
               <div className="py-10 text-center text-sm text-zinc-500">
                 {isFetchingResume ? "正在加载布局..." : "暂无简历布局数据"}
@@ -649,12 +431,6 @@ export default function Home() {
           </div>
         </div>
       </div>
-
-      
-
-      
-
-      
 
       {error && !pdf.isRateLimitModalOpen && (
         <div className="rounded-md bg-red-100 px-4 py-2 text-sm text-red-700 dark:bg-red-900/40 dark:text-red-200">
