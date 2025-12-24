@@ -15,17 +15,15 @@ import { DividerItem } from "@/components/DividerItem";
 import type { ResumeData, ResumeItem } from "@/types/resume";
 
 import { applyOpacityToColor, extractBackgroundStyle } from "@/utils/color";
+import { DEFAULT_LAYOUT_SETTINGS } from "@/utils/resume";
+import {
+  DEFAULT_CELL_PADDING_PX,
+  DEFAULT_CELL_RADIUS_PX,
+  IMAGE_CELL_PADDING_PX,
+} from "@/utils/editorStyles";
 
 const CANVAS_WIDTH = 794;
 const CANVAS_HEIGHT = Math.round((CANVAS_WIDTH * 297) / 210);
-const DEFAULT_LAYOUT_SETTINGS = {
-  columns: 24,
-  row_height_px: 10,
-  accent_color: "#3388ff",
-  font_family: "Arial",
-  font_size_pt: 10,
-  margin_px: 30,
-};
 
 import { Watermark } from "@/components/Watermark";
 
@@ -42,17 +40,13 @@ function resolveLayout(layout?: ItemLayout) {
   };
 }
 
-type PrintViewProps = {
-  resourcePath: string;
-};
-
 declare global {
   interface Window {
     __PRINT_DATA__?: ResumeData;
   }
 }
 
-export function PrintView({ resourcePath: _resourcePath }: PrintViewProps) {
+export function PrintView() {
   const params = useParams<{ id: string }>();
   const resourceId = params?.id;
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
@@ -206,15 +200,22 @@ export function PrintView({ resourcePath: _resourcePath }: PrintViewProps) {
                   ? `${Math.max(1, Math.round(borderWidth!))}px solid ${borderColor ?? "currentColor"}`
                   : "none";
 
-            const commonCellStyle: CSSProperties = {
+            const baseCellStyle: CSSProperties = {
               gridColumn: `${resolvedLayout.x + 1} / span ${resolvedLayout.w}`,
               gridRow: `${resolvedLayout.y + 1} / span ${resolvedLayout.h}`,
-              padding: "12px",
-              borderRadius: "20px",
               backgroundColor: hasBackground ? containerBackground : "transparent",
               minWidth: 0,
               boxSizing: "border-box",
               border: borderValue,
+            };
+            const isImageItem = item.type === "image";
+            const cellStyle: CSSProperties = {
+              ...baseCellStyle,
+              padding: isImageItem
+                ? `${IMAGE_CELL_PADDING_PX}px`
+                : `${DEFAULT_CELL_PADDING_PX}px`,
+              borderRadius: `${DEFAULT_CELL_RADIUS_PX}px`,
+              overflow: isImageItem ? "hidden" : "visible",
             };
 
             const baseTextStyle: CSSProperties = {
@@ -230,7 +231,7 @@ export function PrintView({ resourcePath: _resourcePath }: PrintViewProps) {
 
             if (item.type === "text") {
               return (
-                <div key={item.id} style={commonCellStyle}>
+                <div key={item.id} style={cellStyle}>
                   <TextItem
                     html={item.content}
                     style={baseTextStyle}
@@ -242,7 +243,7 @@ export function PrintView({ resourcePath: _resourcePath }: PrintViewProps) {
 
             if (item.type === "section_title") {
               return (
-                <div key={item.id} style={commonCellStyle}>
+                <div key={item.id} style={cellStyle}>
                   <SectionTitleItem
                     html={item.content}
                     style={baseTextStyle}
@@ -254,10 +255,11 @@ export function PrintView({ resourcePath: _resourcePath }: PrintViewProps) {
             }
 
             if (item.type === "divider") {
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
               const { borderColor: _dc, color: _dcolor, ...restDivider } =
                 (item.style ?? {}) as Record<string, unknown>;
               return (
-                <div key={item.id} style={commonCellStyle}>
+                <div key={item.id} style={cellStyle}>
                   <DividerItem style={restDivider as CSSProperties | undefined} />
                 </div>
               );
@@ -265,7 +267,7 @@ export function PrintView({ resourcePath: _resourcePath }: PrintViewProps) {
 
             if (item.type === "image") {
               return (
-                <div key={item.id} style={commonCellStyle}>
+                <div key={item.id} style={cellStyle}>
                   <ImageItem
                     style={item.style as CSSProperties | undefined}
                     preSignedURL={item.content}
@@ -275,7 +277,7 @@ export function PrintView({ resourcePath: _resourcePath }: PrintViewProps) {
             }
 
             return (
-              <div key={item.id} style={commonCellStyle}>
+              <div key={item.id} style={cellStyle}>
                 <div className="text-xs text-red-500">
                   Unsupported type: {item.type}
                 </div>

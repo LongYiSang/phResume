@@ -25,6 +25,7 @@ export function SectionTitleItem({
 
   // 从 style 中剔除会导致冲突或不应应用在容器上的属性
   // 尤其是 borderColor 与 border: "none" 混用会导致 React 报错
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const {
     borderColor: _borderColor,
     border,

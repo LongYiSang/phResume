@@ -71,7 +71,7 @@ function HeaderButton({ children, onClick, disabled }: { children: React.ReactNo
   );
 }
 
-export default function Inspector({ title, onUpdateTitle, onSave, onDownload, historyCanUndo, historyCanRedo, onUndo, onRedo, styleSettings, onStyleSettingsChange, selectedItemType, selectedItemFontSize, onSelectedItemFontSizeChange, selectedItemLineHeight, onSelectedItemLineHeightChange, selectedItemColor, onSelectedItemColorChange, selectedItemFontFamily, selectedItemContent, selectedItemBackgroundColor, selectedItemBackgroundOpacity, selectedDividerThickness, selectedImageScalePercent, selectedImageFocus, selectedBorderRadius, onBorderRadiusChange, onSelectedItemFontFamilyChange, onBackgroundColorChange, onBackgroundOpacityChange, onDividerThicknessChange, onDeleteSelected, onFormatText, onAlignElement, onListToggle, onImageZoomChange, onImageFocusChange,
+export default function Inspector({ title, onUpdateTitle, onSave, onDownload, historyCanUndo, historyCanRedo, onUndo, onRedo, styleSettings, onStyleSettingsChange, selectedItemType, selectedItemFontSize, onSelectedItemFontSizeChange, selectedItemLineHeight, onSelectedItemLineHeightChange, selectedItemColor, onSelectedItemColorChange, selectedItemFontFamily, selectedItemContent, selectedItemBackgroundColor, selectedItemBackgroundOpacity, selectedDividerThickness, selectedImageScalePercent, selectedImageFocus, selectedBorderRadius, onBorderRadiusChange, onSelectedItemFontFamilyChange, onBackgroundColorChange, onBackgroundOpacityChange, onDividerThicknessChange, onDeleteSelected, onImageZoomChange, onImageFocusChange,
   onImageZoomReset,
   zoom,
   setZoom,

@@ -286,11 +286,14 @@ export function AssetsPanel({
                 >
                   <div className="aspect-square rounded-lg relative overflow-hidden bg-kawaii-bg">
                     {asset.previewUrl ? (
-                      <img
+                      <>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
                         src={asset.previewUrl}
                         alt={label}
                         className="absolute inset-0 h-full w-full object-cover"
-                      />
+                        />
+                      </>
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center rounded bg-zinc-100 text-[10px] text-zinc-500">
                         预览不可用

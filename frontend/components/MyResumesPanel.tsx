@@ -284,7 +284,14 @@ export function MyResumesPanel({
                 <div className="relative bg-white p-3 pb-10 rounded-xl shadow-sm border border-white transform transition-all duration-300 hover:scale-[1.02] hover:-rotate-1 hover:shadow-card">
                   <div className="aspect-[4/3] rounded-lg mb-3 relative overflow-hidden bg-kawaii-bg">
                     {resume.preview_image_url ? (
-                      <img src={resume.preview_image_url} alt={resume.title} className="absolute inset-0 h-full w-full object-cover" />
+                      <>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={resume.preview_image_url}
+                          alt={resume.title}
+                          className="absolute inset-0 h-full w-full object-cover"
+                        />
+                      </>
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center rounded bg-zinc-100 text-[10px] text-zinc-500">预览</div>
                     )}
