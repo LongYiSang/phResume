@@ -1,4 +1,6 @@
-import { useRef, useState, useEffect } from 'react';
+"use client";
+
+import { useEffect, useRef, useState } from "react";
 
 export function useRefState<T>(initialValue: T) {
   const [state, setState] = useState<T>(initialValue);

@@ -8,24 +8,13 @@ import { useAuth } from "@/context/AuthContext";
 import { useAuthFetch } from "@/hooks/useAuthFetch";
 import { API_ROUTES } from "@/lib/api-routes";
 import { useAlertModal } from "@/context/AlertModalContext";
+import { buildImageStyle } from "@/utils/editorStyles";
 
 type ImageItemProps = {
   objectKey?: string;
   style?: CSSProperties;
   preSignedURL?: string;
 };
-
-function combineStyle(style?: CSSProperties): CSSProperties {
-  return {
-    width: "100%",
-    height: "100%",
-    objectFit: "cover",
-    transformOrigin: "center",
-    display: "block",
-    borderRadius: "0.375rem",
-    ...style,
-  };
-}
 
 function InlineImage({
   src,
@@ -36,7 +25,7 @@ function InlineImage({
   style?: CSSProperties;
   onError?: () => void;
 }) {
-  const combinedStyle = combineStyle(style);
+  const combinedStyle = buildImageStyle(style);
   return (
     <img
       src={src}
@@ -116,7 +105,7 @@ function AuthedImage({
     };
   }, [objectKey, accessToken, authFetch, showAlert]);
 
-  const combinedStyle = combineStyle(style);
+  const combinedStyle = buildImageStyle(style);
 
   if (!imageURL) {
     return (
@@ -159,7 +148,7 @@ export function ImageItem({ objectKey, style, preSignedURL }: ImageItemProps) {
   }
 
   if (!objectKey) {
-    const combinedStyle = combineStyle(style);
+    const combinedStyle = buildImageStyle(style);
     return (
       <div
         className="flex h-full w-full items-center justify-center rounded-md bg-zinc-100 text-xs text-zinc-500"

@@ -6,12 +6,10 @@ import {
   useMemo,
   useRef,
   useState,
-  type ChangeEvent,
   type CSSProperties,
 } from "react";
 import { useRouter } from "next/navigation";
 import RGL, { type Layout } from "react-grid-layout";
-import { v4 as uuidv4 } from "uuid";
 import { PageContainer } from "@/components/PageContainer";
 import Inspector from "@/components/Inspector";
 import Dock from "@/components/Dock";
@@ -27,41 +25,28 @@ import { useAuth } from "@/context/AuthContext";
 import { ActiveEditorProvider } from "@/context/ActiveEditorContext";
 import { useAlertModal } from "@/context/AlertModalContext";
 import { useAuthFetch, friendlyMessageForStatus } from "@/hooks/useAuthFetch";
-import { useRefState } from "@/hooks/useRefState";
-import { useErrorHandler } from "@/hooks/useErrorHandler";
-import { usePanelState } from "@/hooks/usePanelState";
+import { useItemStyleEditor } from "@/hooks/useItemStyleEditor";
+import { useResumeActions } from "@/hooks/useResumeActions";
+import { useResumeEditor } from "@/hooks/useResumeEditor";
 import { Move } from "lucide-react";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button } from "@heroui/react";
 import {
   DEFAULT_LAYOUT_SETTINGS,
   GRID_COLS,
   GRID_ROW_HEIGHT,
-  normalizeResumeContent,
 } from "@/utils/resume";
+import {
+  DEFAULT_CELL_PADDING_PX,
+  DEFAULT_CELL_RADIUS_PX,
+  IMAGE_CELL_PADDING_PX,
+} from "@/utils/editorStyles";
 import { API_ROUTES } from "@/lib/api-routes";
 import { ERROR_CODES, messageForErrorCode, titleForErrorCode } from "@/lib/error-codes";
 import { applyOpacityToColor, extractBackgroundStyle } from "@/utils/color";
 import {
-  parseFontSizeValue,
-  extractDividerThickness,
-  extractDividerColor,
-  parseScaleFromTransform,
-  parsePositionPercent,
-  parseBackgroundOpacity,
-  deepCloneResumeData,
-  simplifiedLayouts,
-  isLayoutChanged,
-  computeCenteredPosition,
   calcOverlapIds,
-  DEFAULT_DIVIDER_THICKNESS,
-  DEFAULT_BACKGROUND_OPACITY,
 } from "@/utils/resumeItemUtils";
-import type {
-  LayoutSettings,
-  ResumeData,
-  ResumeItem,
-  ResumeItemStyle,
-} from "@/types/resume";
+import type { LayoutSettings, ResumeItemStyle } from "@/types/resume";
 
 import { Watermark } from "@/components/Watermark";
 
@@ -76,13 +61,7 @@ export default function Home() {
   const { accessToken, setAccessToken, isAuthenticated, isCheckingAuth } = useAuth();
   const authFetch = useAuthFetch();
   const { showAlert } = useAlertModal();
-  const errorHandler = useErrorHandler();
-  const panels = usePanelState();
-  const [title, setTitle] = useState("");
-  const [resumeData, setResumeData, resumeDataRef] = useRefState<ResumeData | null>(null);
-  const [savedResumeId, setSavedResumeId, savedResumeIdRef] = useRefState<number | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isFetchingResume, setIsFetchingResume] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [taskStatus, setTaskStatus] = useState<TaskStatus>("idle");
   const [readyResumeId, setReadyResumeId] = useState<number | null>(null);
   const [downloadDeadline, setDownloadDeadline] = useState<number | null>(null);
@@ -91,28 +70,104 @@ export default function Home() {
   const [downloadUid, setDownloadUid] = useState<number | null>(null);
   const countdownTimerRef = useRef<number | null>(null);
   const generationCorrelationIdRef = useRef<string | null>(null);
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const [isUploadingAsset, setIsUploadingAsset] = useState(false);
+  const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
+  const [isMyResumesOpen, setIsMyResumesOpen] = useState(false);
+  const [isAssetsOpen, setIsAssetsOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [assetPanelRefreshToken, setAssetPanelRefreshToken] = useState(0);
   const [zoom, setZoom] = useState(1);
   const socketRef = useRef<WebSocket | null>(null);
   const heartbeatTimerRef = useRef<number | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef(0);
-  const previewWindowRef = useRef<Window | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [historyStack, setHistoryStack, historyRef] = useRefState<ResumeData[]>([]);
-  const [redoStack, setRedoStack, redoRef] = useRefState<ResumeData[]>([]);
-  const interactionStartSnapshotRef = useRef<ResumeData | null>(null);
-  const isDraggingRef = useRef(false);
-  const isResizingRef = useRef(false);
   const [generationProgress, setGenerationProgress] = useState(0);
   const [isOverlayVisible, setIsOverlayVisible] = useState(false);
   const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [isRateLimitModalOpen, setIsRateLimitModalOpen] = useState(false);
+  const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
+  const [rateLimitError, setRateLimitError] = useState<string | null>(null);
 
-  useEffect(() => {
-    savedResumeIdRef.current = savedResumeId;
-  }, [savedResumeId]);
+  const editor = useResumeEditor();
+  const actions = useResumeActions({
+    isAuthenticated,
+    authFetch,
+    resumeData: editor.resumeData,
+    resumeDataRef: editor.resumeDataRef,
+    withHistory: editor.withHistory,
+    resetEditorState: editor.resetEditorState,
+    setSelectedItemId: editor.setSelectedItemId,
+    setError,
+    showAlert,
+    onResumeApplied: () => setTaskStatus("idle"),
+    onAssetUploaded: () => setAssetPanelRefreshToken((token) => token + 1),
+  });
+  const styleEditor = useItemStyleEditor({
+    selectedItemId: editor.selectedItemId,
+    resumeData: editor.resumeData,
+    withHistory: editor.withHistory,
+  });
+  const {
+    resumeData,
+    historyStack,
+    redoStack,
+    selectedItemId,
+    withHistory,
+    handleUndo,
+    handleRedo,
+    handleDeleteItem,
+    replaceResumeData,
+    handleLayoutChange,
+    handleContentChange,
+    handleDragStart,
+    handleDragStop,
+    handleResizeStart,
+    handleResizeStop,
+  } = editor;
+  const {
+    title,
+    setTitle,
+    savedResumeId,
+    savedResumeIdRef,
+    isFetchingResume,
+    isUploadingAsset,
+    fetchLatestResume,
+    handleSave,
+    handleAddText,
+    handleAddSectionTitle,
+    handleAddDivider,
+    handleAddImageClick,
+    handleImageUpload,
+    handleSelectAssetFromPanel,
+    handleSelectItem,
+    handlePanelResumeSelected,
+    handlePanelResumeDeleted,
+    saveResume,
+  } = actions;
+  const {
+    selectedItem,
+    selectedItemFontSize,
+    selectedItemColor,
+    selectedItemLineHeight,
+    selectedItemFontFamily,
+    selectedDividerThickness,
+    selectedImageScalePercent,
+    selectedImageFocus,
+    selectedItemBackgroundColor,
+    selectedItemBackgroundOpacity,
+    selectedBorderRadius,
+    handleItemFontSizeChange,
+    handleItemColorChange,
+    handleItemLineHeightChange,
+    handleItemBackgroundColorChange,
+    handleItemBackgroundOpacityChange,
+    handleDividerThicknessChange,
+    handleItemFontFamilyChange,
+    handleBorderRadiusChange,
+    handleImageZoomChange,
+    handleImageFocusChange,
+    handleImageZoomReset,
+  } = styleEditor;
 
   const resetPdfGenerationState = useCallback(() => {
     generationCorrelationIdRef.current = null;
@@ -203,90 +258,15 @@ export default function Home() {
     };
   }, [taskStatus]);
 
-  const applyServerResume = useCallback(
-    (payload: { id: number | null; title: string; content: ResumeData | null }) => {
-      setTitle(payload.title);
-      setSavedResumeId(payload.id);
-      setResumeData(payload.content ? deepCloneResumeData(payload.content) : null);
-      setHistoryStack([]);
-      setRedoStack([]);
-      setSelectedItemId(null);
-    },
-    [],
-  );
-
-  const saveResume = useCallback(
-    async (items: ResumeItem[], newSettings: LayoutSettings) => {
-      if (!isAuthenticated) {
-        return;
-      }
-      if (!savedResumeId) {
-        return;
-      }
-      try {
-        await authFetch(API_ROUTES.RESUME.update(savedResumeId), {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title,
-            content: {
-              layout_settings: newSettings,
-              items,
-            },
-          }),
-        });
-      } catch (err) {
-        console.error("自动保存失败", err);
-      }
-    },
-    [isAuthenticated, savedResumeId, title, authFetch],
-  );
-
-  const withHistory = useCallback(
-    (updater: (prev: ResumeData) => ResumeData) => {
-      setResumeData((prev) => {
-        if (!prev) {
-          return prev;
-        }
-        // 入历史快照
-        setHistoryStack((hs) => [...hs, deepCloneResumeData(prev)]);
-        // 变更发生时清空重做栈
-        setRedoStack([]);
-        // 返回新状态
-        return updater(prev);
-      });
-    },
-    [],
-  );
-
-  const appendImageItem = useCallback(
-    (objectKey: string) => {
-      withHistory((prev) => {
-        const newImage: ResumeItem = {
-          id: uuidv4(),
-          type: "image",
-          content: objectKey,
-          layout: { x: 0, y: 0, w: 6, h: 10 },
-          style: {
-            borderRadius: "0.375rem",
-            objectFit: "cover",
-          },
-        };
-        return { ...prev, items: [...prev.items, newImage] };
-      });
-    },
-    [withHistory],
-  );
-
   const requestDownloadLink = useCallback(
     async (resumeId: number, forceDownload = false) => {
       if (!isAuthenticated) {
-        errorHandler.setError("请先登录");
+        setError("请先登录");
         resetDownloadLinkState();
         return;
       }
 
-      errorHandler.clearError();
+      setError(null);
 
       try {
         const url = new URL(API_ROUTES.RESUME.downloadLink(resumeId), window.location.origin);
@@ -314,10 +294,10 @@ export default function Home() {
       } catch (err) {
         console.error("获取下载链接失败", err);
         resetDownloadLinkState();
-        errorHandler.setError("获取下载链接失败，请稍后重试");
+        setError("获取下载链接失败，请稍后重试");
       }
     },
-    [isAuthenticated, authFetch, resetDownloadLinkState, startDownloadCountdown, errorHandler],
+    [isAuthenticated, authFetch, resetDownloadLinkState, startDownloadCountdown],
   );
 
   const handleRequestDownloadLink = useCallback(async () => {
@@ -328,7 +308,7 @@ export default function Home() {
   const handleDownloadFile = useCallback(() => {
     if (!readyResumeId) return;
     if (!downloadToken || !downloadUid || downloadCountdown <= 0) {
-      errorHandler.setError("下载链接已过期，请重新获取");
+      setError("下载链接已过期，请重新获取");
       return;
     }
 
@@ -521,125 +501,11 @@ export default function Home() {
     showAlert,
   ]);
 
-  const fetchLatestResume = useCallback(async () => {
-    if (!isAuthenticated) {
-      return;
-    }
-
-    setIsFetchingResume(true);
-    errorHandler.clearError();
-
-    try {
-      const response = await authFetch(API_ROUTES.RESUME.latest());
-
-      if (!response.ok) {
-        throw new Error("failed to fetch latest resume");
-      }
-
-      const data = await response.json();
-      const parsedContent = normalizeResumeContent(data?.content);
-      applyServerResume({
-        id: typeof data?.id === "number" && data.id > 0 ? data.id : null,
-        title: data?.title ?? "",
-        content: parsedContent,
-      });
-    } catch (err) {
-      console.error("加载最新简历失败", err);
-      errorHandler.setError("加载最新简历失败，请稍后重试");
-    } finally {
-      setIsFetchingResume(false);
-    }
-  }, [applyServerResume, authFetch, isAuthenticated]);
-
   useEffect(() => {
     if (!isCheckingAuth && isAuthenticated) {
       fetchLatestResume();
     }
   }, [isAuthenticated, isCheckingAuth, fetchLatestResume]);
-
-  const handleSave = async () => {
-    errorHandler.clearError();
-
-    if (!isAuthenticated) {
-      errorHandler.setError("请先登录");
-      return;
-    }
-
-    if (!resumeData) {
-      errorHandler.setError("简历内容尚未加载完成");
-      return;
-    }
-    // 保存前校验重叠
-    const currentOverlap = calcOverlapIds(resumeData.items);
-    if (currentOverlap.size > 0) {
-      errorHandler.setError("存在重叠模块，无法保存，请调整位置后重试。");
-      return;
-    }
-
-    let targetTitle = title.trim();
-    let endpoint = "";
-    let method: "POST" | "PUT" = "POST";
-    const resumeIdForUpdate: number | null = savedResumeId;
-
-      if (resumeIdForUpdate === null) {
-        const inputTitle = window.prompt("请输入新简历标题", title || "我的简历");
-        if (inputTitle === null) {
-          return;
-        }
-        targetTitle = inputTitle.trim();
-        if (!targetTitle) {
-          errorHandler.setError("简历标题不能为空");
-          return;
-        }
-        endpoint = API_ROUTES.RESUME.create();
-        method = "POST";
-      } else {
-        if (!targetTitle) {
-          errorHandler.setError("简历标题不能为空");
-          return;
-        }
-        endpoint = API_ROUTES.RESUME.update(resumeIdForUpdate);
-        method = "PUT";
-      }
-
-    setIsLoading(true);
-
-    try {
-      const response = await authFetch(endpoint, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ title: targetTitle, content: resumeData }),
-      });
-
-      if (!response.ok) {
-        if (response.status === 403 && resumeIdForUpdate === null) {
-          errorHandler.setError("已达简历保存上限，请升级会员。");
-          return;
-        }
-        throw new Error("保存失败");
-      }
-
-      const data = await response.json();
-      const normalized = normalizeResumeContent(data?.content);
-      const nextId =
-        typeof data?.id === "number" && data.id > 0
-          ? data.id
-          : resumeIdForUpdate;
-      applyServerResume({
-        id: typeof nextId === "number" ? nextId : null,
-        title: data?.title ?? targetTitle,
-        content: normalized ?? resumeDataRef.current ?? null,
-      });
-      setTaskStatus("idle");
-    } catch (err) {
-      console.error("保存失败", err);
-      errorHandler.setError("保存失败，请重试");
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleDownload = async () => {
     if (!savedResumeId) {
@@ -647,15 +513,18 @@ export default function Home() {
     }
 
     if (!isAuthenticated) {
-      errorHandler.setError("请先登录");
+      setError("请先登录");
       return;
     }
 
-    errorHandler.clearError();
+    setError(null);
     generationCorrelationIdRef.current = null;
     setReadyResumeId(null);
     resetDownloadLinkState();
     setTaskStatus("pending");
+    // 不再预开标签，改为等待生成完成后由用户点击下载
+
+    // 不再主动轮询，等待 WebSocket 完成消息后再打开最新 PDF
 
     try {
       const response = await authFetch(
@@ -665,13 +534,17 @@ export default function Home() {
       if (!response.ok) {
         const msg = friendlyMessageForStatus(response.status, "pdf");
         if (response.status === 429) {
-          errorHandler.showRateLimitModal(msg, "下载失败");
+          setRateLimitMessage(msg);
+          setRateLimitError("下载失败");
+          setIsRateLimitModalOpen(true);
+          setError(null);
         } else {
-          errorHandler.setError(msg);
+          setError(msg);
         }
         throw new Error("下载失败");
       }
 
+      // 生成任务已提交，待 WebSocket 完成后展示下载按钮
       try {
         const data = await response.json();
         const correlationId =
@@ -688,8 +561,8 @@ export default function Home() {
       }
     } catch (err) {
       console.error("生成任务提交失败", err);
-      if (!errorHandler.isRateLimitModalOpen) {
-        errorHandler.setError((prev) => prev ?? "生成任务提交失败，请稍后重试");
+      if (!isRateLimitModalOpen) {
+        setError((prev) => prev ?? "生成任务提交失败，请稍后重试");
       }
       resetPdfGenerationState();
     }
@@ -722,75 +595,12 @@ export default function Home() {
     });
   }, [resumeData]);
 
-  const handleLayoutChange = useCallback(
-    (newLayout: Layout[]) => {
-      setResumeData((prev) => {
-        if (!prev) {
-          return prev;
-        }
-
-        const dragging = isDraggingRef.current;
-
-        const updatedItems = prev.items.map((item) => {
-          const nextLayout = newLayout.find((layoutItem) => layoutItem.i === item.id);
-          if (!nextLayout) {
-            return item;
-          }
-
-          const { x, y, w, h } = nextLayout;
-          if (dragging) {
-            // 拖动过程中仅更新坐标，保持宽高不变，满足“维持原始高度/尺寸”的要求
-            return {
-              ...item,
-              layout: {
-                ...item.layout,
-                x,
-                y,
-                w: item.layout?.w ?? w,
-                h: item.layout?.h ?? h,
-              },
-            };
-          }
-
-        // 缩放时或其他情况下，完整同步（w/h 仅在缩放时会变化）
-          return {
-            ...item,
-            layout: {
-              ...item.layout,
-              x,
-              y,
-              w,
-              h,
-            },
-          };
-        });
-
-        return { ...prev, items: updatedItems };
-      });
-    },
-    [],
-  );
-
   const handleSettingsChange = useCallback(
     (newSettings: LayoutSettings) => {
       withHistory((prev) => ({ ...prev, layout_settings: newSettings }));
     },
     [withHistory],
   );
-
-  const handleContentChange = useCallback((itemId: string, newHtml: string) => {
-    setResumeData((prev) => {
-      if (!prev) {
-        return prev;
-      }
-
-      const updatedItems = prev.items.map((item) =>
-        item.id === itemId ? { ...item, content: newHtml } : item,
-      );
-
-      return { ...prev, items: updatedItems };
-    });
-  }, []);
 
   const handleLogout = useCallback(async () => {
     try {
@@ -816,724 +626,43 @@ export default function Home() {
   const scaledCanvasHeight = Math.round(CANVAS_HEIGHT * zoom);
   const innerCanvasWidth = Math.max(0, scaledCanvasWidth - layoutMarginPx * 2);
   const innerCanvasHeight = Math.max(0, scaledCanvasHeight - layoutMarginPx * 2);
-
-  const selectedItem = useMemo(() => {
-    if (!resumeData || !selectedItemId) {
-      return null;
-    }
-    return resumeData.items.find((item) => item.id === selectedItemId) ?? null;
-  }, [resumeData, selectedItemId]);
-
-  const selectedItemFontSize = useMemo(() => {
-    if (!selectedItem || !resumeData?.layout_settings) {
-      return null;
-    }
-    return parseFontSizeValue(
-      selectedItem.style?.fontSize,
-      resumeData.layout_settings.font_size_pt,
-    );
-  }, [selectedItem, resumeData?.layout_settings]);
-
-  const selectedItemColor = useMemo(() => {
-    if (!selectedItem || !resumeData?.layout_settings) {
-      return null;
-    }
-    if (selectedItem.type === "divider") {
-      return (
-        extractDividerColor(selectedItem.style) ??
-        resumeData.layout_settings.accent_color
-      );
-    }
-    const rawColor = selectedItem.style?.color;
-    if (typeof rawColor === "string" && rawColor.trim().length > 0) {
-      return rawColor;
-    }
-    return resumeData.layout_settings.accent_color;
-  }, [selectedItem, resumeData?.layout_settings]);
-
-  const selectedItemLineHeight = useMemo(() => {
-    if (!selectedItem || !resumeData?.layout_settings) {
-      return null;
-    }
-    const raw = selectedItem.style?.lineHeight;
-    if (typeof raw === "number" && !Number.isNaN(raw)) {
-      return raw;
-    }
-    if (typeof raw === "string") {
-      const parsed = parseFloat(raw);
-      if (!Number.isNaN(parsed)) {
-        return parsed;
-      }
-    }
-    return 1.2;
-  }, [selectedItem, resumeData?.layout_settings]);
-
-  const selectedItemFontFamily = useMemo(() => {
-    if (
-      !selectedItem ||
-      (selectedItem.type !== "text" && selectedItem.type !== "section_title") ||
-      !resumeData?.layout_settings
-    ) {
-      return null;
-    }
-    const rawFamily = selectedItem.style?.fontFamily;
-    if (typeof rawFamily === "string" && rawFamily.trim().length > 0) {
-      return rawFamily;
-    }
-    return resumeData.layout_settings.font_family;
-  }, [selectedItem, resumeData?.layout_settings]);
-
-  const selectedDividerThickness = useMemo(() => {
-    if (!selectedItem || selectedItem.type !== "divider") {
-      return null;
-    }
-    return extractDividerThickness(selectedItem.style) ?? DEFAULT_DIVIDER_THICKNESS;
-  }, [selectedItem]);
-
-  const selectedImageScalePercent = useMemo(() => {
-    if (!selectedItem || selectedItem.type !== "image") {
-      return null;
-    }
-    const scale = parseScaleFromTransform(selectedItem.style?.transform);
-    if (!scale) {
-      return 100;
-    }
-    return Math.round(scale * 100);
-  }, [selectedItem]);
-
-  const selectedImageFocus = useMemo(() => {
-    if (!selectedItem || selectedItem.type !== "image") {
-      return null;
-    }
-    return (
-      parsePositionPercent(selectedItem.style?.objectPosition) ??
-      parsePositionPercent((selectedItem.style as Record<string, unknown>)?.transformOrigin) ?? {
-        x: 50,
-        y: 50,
-      }
-    );
-  }, [selectedItem]);
-
-  const selectedItemBackgroundColor = useMemo(() => {
-    if (!selectedItem) {
-      return null;
-    }
-    const { color } = extractBackgroundStyle(selectedItem.style);
-    return color ?? null;
-  }, [selectedItem]);
-
-  const selectedBorderRadius = useMemo(() => {
-    if (!selectedItem || selectedItem.type !== "section_title") {
-      return null;
-    }
-    const radius = selectedItem.style?.borderTopLeftRadius;
-    if (typeof radius === "number") return radius;
-    if (typeof radius === "string") return parseFloat(radius) || 0;
-    return 0;
-  }, [selectedItem]);
-
-  const selectedItemBackgroundOpacity = useMemo(() => {
-    if (!selectedItem) {
-      return null;
-    }
-    const { opacity } = extractBackgroundStyle(selectedItem.style);
-    return typeof opacity === "number" ? opacity : null;
-  }, [selectedItem]);
-
-  const handleItemFontSizeChange = useCallback(
-    (newSizePt: number) => {
-      if (!selectedItemId) return;
-      withHistory((prev) => {
-        const updatedItems = prev.items.map((item) =>
-          item.id !== selectedItemId
-            ? item
-            : {
-                ...item,
-                style: {
-                  ...(item.style ?? {}),
-                  fontSize: `${newSizePt}pt`,
-                },
-              },
-        );
-        return { ...prev, items: updatedItems };
-      });
-    },
-    [selectedItemId, withHistory],
-  );
-
-  const handleItemColorChange = useCallback(
-    (newColor: string) => {
-      if (!selectedItemId) return;
-      withHistory((prev) => {
-        const accent =
-          prev.layout_settings?.accent_color ?? DEFAULT_LAYOUT_SETTINGS.accent_color;
-        const safeColor = newColor || accent;
-        const updatedItems = prev.items.map((item) => {
-          if (item.id !== selectedItemId) {
-            return item;
-          }
-          if (item.type === "divider") {
-            const nextThickness =
-              extractDividerThickness(item.style) ?? DEFAULT_DIVIDER_THICKNESS;
-            const nextStyle: ResumeItemStyle = {
-              ...(item.style ?? {}),
-            };
-            delete (nextStyle as unknown as Record<string, unknown>)["borderColor"];
-            delete (nextStyle as unknown as Record<string, unknown>)["color"];
-            nextStyle.borderTop = `${nextThickness}px solid ${safeColor}`;
-            return {
-              ...item,
-              style: nextStyle,
-            };
-          }
-          return {
-            ...item,
-            style: {
-              ...(item.style ?? {}),
-              color: safeColor,
-            },
-          };
-        });
-        return { ...prev, items: updatedItems };
-      });
-    },
-    [selectedItemId, withHistory],
-  );
-
-  const handleItemBackgroundColorChange = useCallback(
-    (newColor: string | null) => {
-      if (!selectedItemId) return;
-      withHistory((prev) => {
-        const updatedItems = prev.items.map((item) => {
-          if (item.id !== selectedItemId) {
-            return item;
-          }
-          const nextStyle: ResumeItemStyle = {
-            ...(item.style ?? {}),
-          };
-          const trimmed = newColor?.trim();
-          if (!trimmed) {
-            if (item.type === "section_title") {
-              const accent =
-                prev.layout_settings?.accent_color ?? DEFAULT_LAYOUT_SETTINGS.accent_color;
-              nextStyle.backgroundColor = "transparent";
-              delete nextStyle.backgroundOpacity;
-              const currentTextColor = (nextStyle.color ?? "").toString().toLowerCase();
-              const isWhite =
-                currentTextColor === "#ffffff" ||
-                currentTextColor === "white" ||
-                currentTextColor.includes("rgb(255, 255, 255");
-              if (!currentTextColor || isWhite) {
-                nextStyle.color = accent;
-              }
-              if (!nextStyle.borderColor) {
-                nextStyle.borderColor = accent;
-              }
-              return {
-                ...item,
-                style: nextStyle,
-              };
-            }
-            delete nextStyle.backgroundColor;
-            delete nextStyle.backgroundOpacity;
-            return {
-              ...item,
-              style: nextStyle,
-            };
-          }
-          const existingOpacity = parseBackgroundOpacity(nextStyle.backgroundOpacity);
-          nextStyle.backgroundColor = trimmed;
-          nextStyle.backgroundOpacity =
-            existingOpacity ?? DEFAULT_BACKGROUND_OPACITY;
-          
-          if (item.type === "section_title") {
-            nextStyle.borderColor = trimmed;
-          }
-
-          return {
-            ...item,
-            style: nextStyle,
-          };
-        });
-        return { ...prev, items: updatedItems };
-      });
-    },
-    [selectedItemId, withHistory],
-  );
-
-  const handleItemBackgroundOpacityChange = useCallback(
-    (nextOpacity: number) => {
-      if (!selectedItemId) return;
-      const clamped = Math.max(0, Math.min(1, nextOpacity));
-      withHistory((prev) => {
-        const updatedItems = prev.items.map((item) => {
-          if (item.id !== selectedItemId) {
-            return item;
-          }
-          const nextStyle: ResumeItemStyle = {
-            ...(item.style ?? {}),
-          };
-          nextStyle.backgroundOpacity = clamped;
-          return {
-            ...item,
-            style: nextStyle,
-          };
-        });
-        return { ...prev, items: updatedItems };
-      });
-    },
-    [selectedItemId, withHistory],
-  );
-
-  const handleDividerThicknessChange = useCallback(
-    (nextThickness: number) => {
-      if (!selectedItemId) return;
-      const clamped = Math.max(1, Math.min(10, Math.round(nextThickness)));
-      withHistory((prev) => {
-        const accent =
-          prev.layout_settings?.accent_color ?? DEFAULT_LAYOUT_SETTINGS.accent_color;
-        const updatedItems = prev.items.map((item) => {
-          if (item.id !== selectedItemId || item.type !== "divider") {
-            return item;
-          }
-          const currentColor =
-            extractDividerColor(item.style) ?? accent;
-          const nextStyle: ResumeItemStyle = {
-            ...(item.style ?? {}),
-          };
-          delete (nextStyle as unknown as Record<string, unknown>)["borderColor"];
-          delete (nextStyle as unknown as Record<string, unknown>)["color"];
-          nextStyle.borderTop = `${clamped}px solid ${currentColor}`;
-          return {
-            ...item,
-            style: nextStyle,
-          };
-        });
-        return { ...prev, items: updatedItems };
-      });
-    },
-    [selectedItemId, withHistory],
-  );
-
-  const handleItemFontFamilyChange = useCallback(
-    (fontFamily: string) => {
-      if (!selectedItemId) return;
-      withHistory((prev) => {
-        const updatedItems = prev.items.map((item) =>
-          item.id !== selectedItemId
-            ? item
-            : {
-                ...item,
-                style: {
-                  ...(item.style ?? {}),
-                  fontFamily,
-                },
-              },
-        );
-        return { ...prev, items: updatedItems };
-      });
-    },
-    [selectedItemId, withHistory],
-  );
-
-  const handleBorderRadiusChange = useCallback(
-    (radius: number) => {
-      if (!selectedItemId) return;
-      withHistory((prev) => {
-        const updatedItems = prev.items.map((item) =>
-          item.id !== selectedItemId
-            ? item
-            : {
-                ...item,
-                style: {
-                  ...(item.style ?? {}),
-                  borderTopLeftRadius: radius,
-                  borderTopRightRadius: radius,
-                },
-              },
-        );
-        return { ...prev, items: updatedItems };
-      });
-    },
-    [selectedItemId, withHistory],
-  );
-
-  const handleImageZoomChange = useCallback(
-    (scale: number) => {
-      if (!selectedItemId) return;
-      const nextScale = Math.max(0.5, Math.min(2, scale));
-      withHistory((prev) => {
-        const updated = prev.items.map((item) => {
-          if (item.id !== selectedItemId || item.type !== "image") {
-            return item;
-          }
-          const existingOrigin =
-            typeof item.style?.transformOrigin === "string"
-              ? item.style.transformOrigin
-              : typeof item.style?.objectPosition === "string"
-                ? item.style.objectPosition
-                : "50% 50%";
-          return {
-            ...item,
-            style: {
-              ...(item.style ?? {}),
-              transform: `scale(${nextScale})`,
-              transformOrigin: existingOrigin,
-            },
-          };
-        });
-        return { ...prev, items: updated };
-      });
-    },
-    [selectedItemId, withHistory],
-  );
-
-  const handleImageFocusChange = useCallback(
-    (xPercent: number, yPercent: number) => {
-      if (!selectedItemId) return;
-      const nextX = Math.max(0, Math.min(100, Math.round(xPercent)));
-      const nextY = Math.max(0, Math.min(100, Math.round(yPercent)));
-      const nextValue = `${nextX}% ${nextY}%`;
-      withHistory((prev) => {
-        const updated = prev.items.map((item) =>
-          item.id !== selectedItemId || item.type !== "image"
-            ? item
-            : {
-                ...item,
-                style: {
-                  ...(item.style ?? {}),
-                  objectPosition: nextValue,
-                  transformOrigin: nextValue,
-                },
-              },
-        );
-        return { ...prev, items: updated };
-      });
-    },
-    [selectedItemId, withHistory],
-  );
-
-  const handleImageZoomReset = useCallback(() => {
-    if (!selectedItemId) return;
-    withHistory((prev) => {
-      const updated = prev.items.map((item) =>
-        item.id !== selectedItemId || item.type !== "image"
-          ? item
-          : {
-              ...item,
-              style: {
-                ...(item.style ?? {}),
-                transform: "scale(1)",
-                objectPosition: "50% 50%",
-                transformOrigin: "50% 50%",
-              },
-            },
-      );
-      return { ...prev, items: updated };
-    });
-  }, [selectedItemId, withHistory]);
-
-  const handleAddSectionTitle = useCallback(() => {
-    if (!resumeData) {
-      errorHandler.setError("简历内容尚未加载完成");
-      return;
-    }
-    const defaultW = 24;
-    const defaultH = 3;
-    const accentColor =
-      resumeData.layout_settings?.accent_color ??
-      DEFAULT_LAYOUT_SETTINGS.accent_color;
-
-    withHistory((prev) => {
-      const pos = computeCenteredPosition(prev, defaultW, defaultH);
-      const newItem: ResumeItem = {
-        id: uuidv4(),
-        type: "section_title",
-        content: "分节标题",
-        layout: { x: pos.x, y: pos.y, w: defaultW, h: defaultH },
-        style: {
-          fontSize: `${(prev.layout_settings?.font_size_pt ?? DEFAULT_LAYOUT_SETTINGS.font_size_pt) + 2}pt`,
-          backgroundColor: accentColor,
-          color: "#ffffff",
-          borderColor: accentColor,
-        },
-      };
-      return { ...prev, items: [...prev.items, newItem] };
-    });
-  }, [resumeData, withHistory]);
-
-  const handleAddText = useCallback(() => {
-    if (!resumeData) {
-      errorHandler.setError("简历内容尚未加载完成");
-      return;
-    }
-    const defaultW = 12;
-    const defaultH = 6;
-    withHistory((prev) => {
-      const pos = computeCenteredPosition(prev, defaultW, defaultH);
-      const newText: ResumeItem = {
-        id: uuidv4(),
-        type: "text",
-        content: "",
-        layout: { x: pos.x, y: pos.y, w: defaultW, h: defaultH },
-        style: {
-          fontSize: `${prev.layout_settings?.font_size_pt ?? DEFAULT_LAYOUT_SETTINGS.font_size_pt}pt`,
-          color: prev.layout_settings?.accent_color ?? DEFAULT_LAYOUT_SETTINGS.accent_color,
-        },
-      };
-      return { ...prev, items: [...prev.items, newText] };
-    });
-  }, [resumeData, withHistory]);
-
   const overlapIds = useMemo(() => {
     if (!resumeData) return new Set<string>();
     return calcOverlapIds(resumeData.items);
   }, [resumeData]);
 
-  const handleAddDivider = useCallback(() => {
-    if (!resumeData) {
-      errorHandler.setError("简历内容尚未加载完成");
-      return;
-    }
-
-    const accentColor =
-      resumeData.layout_settings?.accent_color ??
-      DEFAULT_LAYOUT_SETTINGS.accent_color;
-
-    withHistory((prev) => {
-      const newDivider: ResumeItem = {
-        id: uuidv4(),
-        type: "divider",
-        content: "",
-        layout: { x: 0, y: 0, w: 24, h: 2 },
-        style: {
-          borderTop: `2px solid ${accentColor}`,
-          margin: "8px 0",
-        },
-      };
-      return { ...prev, items: [...prev.items, newDivider] };
+  const handleAddImagePanelToggle = useCallback(() => {
+    if (!handleAddImageClick()) return;
+    setIsAssetsOpen((prev) => {
+      const next = !prev;
+      if (next) {
+        setIsTemplatesOpen(false);
+        setIsMyResumesOpen(false);
+        setIsSettingsOpen(false);
+      }
+      return next;
     });
-  }, [resumeData, withHistory]);
-
-  const handleAddImageClick = useCallback(() => {
-    if (!resumeData) {
-      errorHandler.setError("简历内容尚未加载完成");
-      return;
-    }
-    if (!isAuthenticated) {
-      errorHandler.setError("请先登录");
-      return;
-    }
-    panels.togglePanel('assets');
-  }, [resumeData, isAuthenticated, errorHandler, panels]);
+  }, [
+    handleAddImageClick,
+    setIsAssetsOpen,
+    setIsTemplatesOpen,
+    setIsMyResumesOpen,
+    setIsSettingsOpen,
+  ]);
 
   const handleRequestAssetUpload = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
 
-  const handleImageUpload = useCallback(
-    async (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      if (!file) {
-        return;
-      }
-
-      if (!isAuthenticated) {
-        errorHandler.setError("请先登录");
-        event.target.value = "";
-        return;
-      }
-
-      if (!resumeDataRef.current) {
-        errorHandler.setError("简历内容尚未加载完成");
-        event.target.value = "";
-        return;
-      }
-
-      errorHandler.clearError();
-      setIsUploadingAsset(true);
-
-      const formData = new FormData();
-      formData.append("file", file);
-
-      try {
-        const { API_ROUTES } = await import("@/lib/api-routes");
-        const response = await authFetch(API_ROUTES.ASSETS.upload(), {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!response.ok) {
-          if (process.env.NODE_ENV !== "production") {
-            console.error("图片上传失败", {
-              status: response.status,
-            });
-          }
-          if (response.status === 403) {
-            showAlert({
-              title: "上传上限",
-              message: `您已达到最大上传数量限制（${4}张），请一段时间后再尝试上传`,
-            });
-            errorHandler.clearError();
-            throw new Error("asset limit reached");
-          }
-          errorHandler.setError(friendlyMessageForStatus(response.status, "upload"));
-          throw new Error("upload failed");
-        }
-
-        const data = await response.json();
-        const objectKey = data?.objectKey;
-
-        if (typeof objectKey !== "string" || objectKey.length === 0) {
-          throw new Error("missing object key");
-        }
-
-        appendImageItem(objectKey);
-        setAssetPanelRefreshToken((token) => token + 1);
-      } catch (err) {
-        if (process.env.NODE_ENV !== "production") {
-          console.error("图片上传失败", err);
-        }
-        if (String((err as Error | undefined)?.message ?? "") !== "asset limit reached") {
-          errorHandler.setError((prev) => prev ?? "图片上传失败，请重试");
-        }
-      } finally {
-        setIsUploadingAsset(false);
-        event.target.value = "";
-      }
-    },
-    [authFetch, isAuthenticated, appendImageItem, showAlert],
-  );
-
-  const handleSelectAssetFromPanel = useCallback(
+  const handleSelectAssetAndClose = useCallback(
     (objectKey: string) => {
-      if (!isAuthenticated) {
-        errorHandler.setError("请先登录");
+      if (!handleSelectAssetFromPanel(objectKey)) {
         return;
       }
-      if (!resumeDataRef.current) {
-        errorHandler.setError("简历内容尚未加载完成");
-        return;
-      }
-      appendImageItem(objectKey);
-      panels.closeAllPanels();
+      setIsAssetsOpen(false);
     },
-    [appendImageItem, isAuthenticated, errorHandler, panels],
+    [handleSelectAssetFromPanel, setIsAssetsOpen],
   );
-
-  const handleSelectItem = useCallback((itemId: string) => {
-    setSelectedItemId(itemId);
-  }, []);
-
-  const handleDeleteItem = useCallback(
-    (itemId: string) => {
-      const ok = window.confirm("确认要删除该模块吗？此操作不可撤销。");
-      if (!ok) return;
-      withHistory((prev) => {
-        const nextItems = prev.items.filter((i) => i.id !== itemId);
-        return { ...prev, items: nextItems };
-      });
-      setSelectedItemId((curr) => (curr === itemId ? null : curr));
-    },
-    [withHistory],
-  );
-
-  // 撤销/重做
-  const handleUndo = useCallback(() => {
-    const curr = resumeDataRef.current;
-    const hs = historyRef.current;
-    if (!curr || hs.length === 0) return;
-    const prevState = hs[hs.length - 1];
-    setHistoryStack(hs.slice(0, -1));
-    setRedoStack((rs) => [...rs, deepCloneResumeData(curr)]);
-    setResumeData(deepCloneResumeData(prevState));
-  }, []);
-
-  const handleRedo = useCallback(() => {
-    const curr = resumeDataRef.current;
-    const rs = redoRef.current;
-    if (!curr || rs.length === 0) return;
-    const nextState = rs[rs.length - 1];
-    setRedoStack(rs.slice(0, -1));
-    setHistoryStack((hs) => [...hs, deepCloneResumeData(curr)]);
-    setResumeData(deepCloneResumeData(nextState));
-  }, []);
-
-  // 应用模板：完全替换主状态，并将之前状态入历史
-  const replaceResumeData = useCallback((nextData: ResumeData) => {
-    setResumeData((prev) => {
-      if (prev) {
-        setHistoryStack((hs) => [...hs, deepCloneResumeData(prev)]);
-        setRedoStack([]);
-      }
-      return deepCloneResumeData(nextData);
-    });
-  }, []);
-
-  const handlePanelResumeSelected = useCallback(
-    (payload: { id: number; title: string; content: ResumeData }) => {
-      applyServerResume({
-        id: payload.id,
-        title: payload.title,
-        content: payload.content,
-      });
-      setTaskStatus("idle");
-    },
-    [applyServerResume],
-  );
-
-  const handlePanelResumeDeleted = useCallback(
-    (deletedId: number) => {
-      if (savedResumeId === deletedId) {
-        fetchLatestResume();
-      }
-    },
-    [fetchLatestResume, savedResumeId],
-  );
-
-  // 拖拽/缩放交互：开始时拍快照，结束时如有变动则把起始快照推入历史
-  const simplifiedLayoutsMemo = useCallback((data: ResumeData | null) => {
-    return simplifiedLayouts(data);
-  }, []);
-  const isLayoutChangedMemo = useCallback(
-    (a: ResumeData | null, b: ResumeData | null) => {
-      return isLayoutChanged(a, b);
-    },
-    [],
-  );
-
-  const handleDragStart = useCallback(() => {
-    isDraggingRef.current = true;
-    interactionStartSnapshotRef.current = resumeDataRef.current
-      ? deepCloneResumeData(resumeDataRef.current)
-      : null;
-  }, []);
-  const handleDragStop = useCallback(() => {
-    isDraggingRef.current = false;
-    const start = interactionStartSnapshotRef.current;
-    const curr = resumeDataRef.current;
-    interactionStartSnapshotRef.current = null;
-    if (start && curr && isLayoutChangedMemo(start, curr)) {
-      setHistoryStack((hs) => [...hs, deepCloneResumeData(start)]);
-      setRedoStack([]);
-    }
-  }, [isLayoutChangedMemo]);
-  const handleResizeStart = useCallback(() => {
-    isResizingRef.current = true;
-    interactionStartSnapshotRef.current = resumeDataRef.current
-      ? deepCloneResumeData(resumeDataRef.current)
-      : null;
-  }, []);
-  const handleResizeStop = useCallback(() => {
-    isResizingRef.current = false;
-    const start = interactionStartSnapshotRef.current;
-    const curr = resumeDataRef.current;
-    interactionStartSnapshotRef.current = null;
-    if (start && curr && isLayoutChangedMemo(start, curr)) {
-      setHistoryStack((hs) => [...hs, deepCloneResumeData(start)]);
-      setRedoStack([]);
-    }
-  }, [isLayoutChangedMemo]);
 
   return (
     <ActiveEditorProvider>
@@ -1541,16 +670,16 @@ export default function Home() {
         
         <PDFGenerationOverlay isVisible={isOverlayVisible} progress={generationProgress} />
 
-        <Modal isOpen={errorHandler.isRateLimitModalOpen} onOpenChange={(open) => errorHandler.setIsRateLimitModalOpen(open)}>
+        <Modal isOpen={isRateLimitModalOpen} onOpenChange={setIsRateLimitModalOpen}>
           <ModalContent>
             {(onClose) => (
               <>
                 <ModalHeader>生成次数上限</ModalHeader>
                 <ModalBody>
                   <div className="space-y-2">
-                    <div className="text-sm text-kawaii-text">{errorHandler.rateLimitMessage ?? "生成过于频繁，请稍后再试"}</div>
+                    <div className="text-sm text-kawaii-text">{rateLimitMessage ?? "生成过于频繁，请稍后再试"}</div>
                     <div className="text-xs text-slate-500">错误类型：Console Error</div>
-                    <div className="text-xs text-slate-500">错误信息：{errorHandler.rateLimitError ?? "下载失败"}</div>
+                    <div className="text-xs text-slate-500">错误信息：{rateLimitError ?? "下载失败"}</div>
                     <div className="text-xs text-slate-500">错误位置：handleDownload (app/page.tsx:664:15)</div>
                     <div className="text-xs text-slate-500">Next.js 版本：16.0.1 (Turbopack)</div>
                   </div>
@@ -1576,14 +705,44 @@ export default function Home() {
           <Dock
             onAddText={handleAddText}
             onAddSectionTitle={handleAddSectionTitle}
-            onAddImage={handleAddImageClick}
+            onAddImage={handleAddImagePanelToggle}
             onAddDivider={handleAddDivider}
-            onOpenTemplates={() => panels.togglePanel('templates')}
-            onOpenMyResumes={() => panels.togglePanel('myResumes')}
-            onOpenSettings={() => panels.togglePanel('settings')}
+            onOpenTemplates={() =>
+              setIsTemplatesOpen((prev) => {
+                const next = !prev;
+                if (next) {
+                  setIsMyResumesOpen(false);
+                  setIsAssetsOpen(false);
+                  setIsSettingsOpen(false);
+                }
+                return next;
+              })
+            }
+            onOpenMyResumes={() =>
+              setIsMyResumesOpen((prev) => {
+                const next = !prev;
+                if (next) {
+                  setIsTemplatesOpen(false);
+                  setIsAssetsOpen(false);
+                  setIsSettingsOpen(false);
+                }
+                return next;
+              })
+            }
+            onOpenSettings={() =>
+              setIsSettingsOpen((prev) => {
+                const next = !prev;
+                if (next) {
+                  setIsTemplatesOpen(false);
+                  setIsMyResumesOpen(false);
+                  setIsAssetsOpen(false);
+                }
+                return next;
+              })
+            }
             onLogout={handleLogout}
-            assetsActive={panels.isAssetsOpen}
-            settingsActive={panels.isSettingsOpen}
+            assetsActive={isAssetsOpen}
+            settingsActive={isSettingsOpen}
             disabled={!resumeData}
             onToggleWatermark={() => {
               if (!resumeData) return;
@@ -1591,7 +750,7 @@ export default function Home() {
                 ...resumeData.layout_settings,
                 enable_watermark: !resumeData.layout_settings.enable_watermark,
               };
-              setResumeData({
+              editor.setResumeData({
                 ...resumeData,
                 layout_settings: newSettings,
               });
@@ -1631,28 +790,12 @@ export default function Home() {
                 : null
             }
             onSelectedItemColorChange={handleItemColorChange}
-            selectedItemLineHeight={
-              selectedItem?.type === "text" || selectedItem?.type === "section_title"
-                ? selectedItemLineHeight
-                : null
-            }
-            onSelectedItemLineHeightChange={(lh) => {
-              if (!selectedItemId || typeof lh !== "number") return;
-              withHistory((prev) => {
-                const updatedItems = prev.items.map((item) =>
-                  item.id !== selectedItemId
-                    ? item
-                    : {
-                        ...item,
-                        style: {
-                          ...(item.style ?? {}),
-                          lineHeight: lh,
-                        },
-                      },
-                );
-                return { ...prev, items: updatedItems };
-              });
-            }}
+              selectedItemLineHeight={
+                selectedItem?.type === "text" || selectedItem?.type === "section_title"
+                  ? selectedItemLineHeight
+                  : null
+              }
+              onSelectedItemLineHeightChange={handleItemLineHeightChange}
               selectedItemFontFamily={
                 selectedItem?.type === "text" || selectedItem?.type === "section_title"
                   ? selectedItemFontFamily
@@ -1761,14 +904,6 @@ export default function Home() {
                         ...(restDividerStyle as ResumeItemStyle),
                       };
 
-                      const imageStyle = {
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover" as const,
-                        borderRadius: "0.75rem",
-                        ...(item.style ?? {}),
-                      };
-
                       const backgroundMeta = extractBackgroundStyle(item.style);
                       const resolvedBackgroundColor = applyOpacityToColor(
                         backgroundMeta.color,
@@ -1786,7 +921,10 @@ export default function Home() {
                       const isInteractive = isSelected || isOverlapped;
                       
                       const cellStyle: CSSProperties = {
-                        padding: item.type === "image" ? "8px" : "12px",
+                        padding:
+                          item.type === "image"
+                            ? `${IMAGE_CELL_PADDING_PX}px`
+                            : `${DEFAULT_CELL_PADDING_PX}px`,
                         // 仅当有自定义背景时才应用背景色，否则由 CSS 类控制（默认透明，hover/active 变白）
                         backgroundColor: isSectionTitle
                           ? "transparent"
@@ -1799,7 +937,7 @@ export default function Home() {
                         borderColor,
                         borderStyle: hasCustomBackground ? "solid" : "dashed",
                         borderWidth: isInteractive ? 2 : 1,
-                        borderRadius: "22px",
+                        borderRadius: `${DEFAULT_CELL_RADIUS_PX}px`,
                         transition:
                           "border 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease",
                       };
@@ -1807,7 +945,7 @@ export default function Home() {
                       return (
                         <div
                           key={item.id}
-                          className={`group relative h-full w-full rounded-[22px] border text-sm text-zinc-900 shadow-sm transition-all hover-glass ${
+                          className={`group relative h-full w-full border text-sm text-zinc-900 shadow-sm transition-all hover-glass ${
                             item.type === "image" ? "overflow-hidden" : ""
                           } ${
                             isOverlapped
@@ -1858,7 +996,7 @@ export default function Home() {
                           {item.type === "image" && (
                             <ImageItem
                               objectKey={item.content}
-                              style={imageStyle}
+                              style={item.style as CSSProperties}
                             />
                           )}
 
@@ -1896,39 +1034,39 @@ export default function Home() {
 
       
 
-      {errorHandler.error && !errorHandler.isRateLimitModalOpen && (
-          <div className="rounded-md bg-red-100 px-4 py-2 text-sm text-red-700 dark:bg-red-900/40 dark:text-red-200">
-            {errorHandler.error}
-          </div>
-        )}
+      {error && !isRateLimitModalOpen && (
+        <div className="rounded-md bg-red-100 px-4 py-2 text-sm text-red-700 dark:bg-red-900/40 dark:text-red-200">
+          {error}
+        </div>
+      )}
 
       <TemplatesPanel
-        isOpen={panels.isTemplatesOpen}
-        onClose={() => panels.closeAllPanels()}
+        isOpen={isTemplatesOpen}
+        onClose={() => setIsTemplatesOpen(false)}
         accessToken={accessToken}
         currentResumeData={resumeData}
         onApply={replaceResumeData}
       />
       <MyResumesPanel
-        isOpen={panels.isMyResumesOpen}
-        onClose={() => panels.closeAllPanels()}
+        isOpen={isMyResumesOpen}
+        onClose={() => setIsMyResumesOpen(false)}
         accessToken={accessToken}
         currentResumeData={resumeData}
         onResumeSelected={handlePanelResumeSelected}
         onResumeDeleted={handlePanelResumeDeleted}
       />
       <AssetsPanel
-        isOpen={panels.isAssetsOpen}
-        onClose={() => panels.closeAllPanels()}
+        isOpen={isAssetsOpen}
+        onClose={() => setIsAssetsOpen(false)}
         accessToken={accessToken}
-        onSelectAsset={handleSelectAssetFromPanel}
+        onSelectAsset={handleSelectAssetAndClose}
         onRequestUpload={handleRequestAssetUpload}
         isUploading={isUploadingAsset}
         refreshToken={assetPanelRefreshToken}
       />
       <SettingsPanel
-        isOpen={panels.isSettingsOpen}
-        onClose={() => panels.closeAllPanels()}
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
         layoutSettings={resumeData?.layout_settings}
         onSettingsChange={handleSettingsChange}
       />
