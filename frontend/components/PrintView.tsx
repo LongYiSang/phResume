@@ -40,17 +40,13 @@ function resolveLayout(layout?: ItemLayout) {
   };
 }
 
-type PrintViewProps = {
-  resourcePath: string;
-};
-
 declare global {
   interface Window {
     __PRINT_DATA__?: ResumeData;
   }
 }
 
-export function PrintView({ resourcePath: _resourcePath }: PrintViewProps) {
+export function PrintView() {
   const params = useParams<{ id: string }>();
   const resourceId = params?.id;
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
@@ -259,6 +255,7 @@ export function PrintView({ resourcePath: _resourcePath }: PrintViewProps) {
             }
 
             if (item.type === "divider") {
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
               const { borderColor: _dc, color: _dcolor, ...restDivider } =
                 (item.style ?? {}) as Record<string, unknown>;
               return (

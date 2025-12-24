@@ -165,10 +165,6 @@ export function StylePanel({
     handleChange("font_family", val);
   };
 
-  const handleBlockRangeChange = (event: ChangeEvent<HTMLInputElement>) => {
-    onSelectedItemFontSizeChange(Number(event.target.value));
-  };
-
   const handleBlockColorChange = (event: ChangeEvent<HTMLInputElement>) => {
     onSelectedItemColorChange(event.target.value);
   };

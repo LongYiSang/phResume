@@ -67,14 +67,17 @@ export function Watermark() {
         <text x="56" y="15" fontFamily="Quicksand" fontSize="12" fontWeight="800" fill="url(#wm-gradient)" letterSpacing="1">拼好历</text>
       </svg>
       {dataUrl ? (
-        <img
-          className="hidden print:block"
-          src={dataUrl}
-          width={120}
-          height={20}
-          alt="watermark"
-          style={{ imageRendering: "auto" }}
-        />
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            className="hidden print:block"
+            src={dataUrl}
+            width={120}
+            height={20}
+            alt="watermark"
+            style={{ imageRendering: "auto" }}
+          />
+        </>
       ) : null}
     </div>
   );

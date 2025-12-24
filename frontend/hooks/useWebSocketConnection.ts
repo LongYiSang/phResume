@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { useEffectEvent } from "react";
 
 type UseWebSocketConnectionParams = {
   isAuthenticated: boolean;
@@ -24,13 +23,16 @@ export function useWebSocketConnection({
   const reconnectAttemptsRef = useRef(0);
   const shouldReconnectRef = useRef(true);
   const connectRef = useRef<() => void>(() => {});
+  const onMessageRef = useRef<typeof onMessage>(onMessage);
+  const onErrorRef = useRef<typeof onError>(onError);
 
-  const onMessageEvent = useEffectEvent((raw: string) => {
-    onMessage?.(raw);
-  });
-  const onErrorEvent = useEffectEvent((error: Error) => {
-    onError?.(error);
-  });
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+  }, [onMessage]);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
 
   const clearHeartbeat = useCallback(() => {
     if (heartbeatTimerRef.current) {
@@ -128,7 +130,7 @@ export function useWebSocketConnection({
       if (typeof event.data !== "string") {
         return;
       }
-      onMessageEvent(event.data);
+      onMessageRef.current?.(event.data);
     };
 
     ws.onclose = () => {
@@ -148,15 +150,13 @@ export function useWebSocketConnection({
       if (!shouldReconnectRef.current) {
         return;
       }
-      onErrorEvent(new Error("WebSocket error"));
+      onErrorRef.current?.(new Error("WebSocket error"));
       try { ws.close(); } catch {}
       scheduleReconnect();
     };
   }, [
     accessToken,
     isAuthenticated,
-    onErrorEvent,
-    onMessageEvent,
     resolveWebSocketURL,
     scheduleReconnect,
   ]);
@@ -173,10 +173,10 @@ export function useWebSocketConnection({
       try {
         socketRef.current.send(JSON.stringify(payload));
       } catch (err) {
-        onErrorEvent(err as Error);
+        onErrorRef.current?.(err as Error);
       }
     },
-    [onErrorEvent],
+    [],
   );
 
   useEffect(() => {

@@ -41,9 +41,9 @@ type ResumeCanvasProps = {
 
 const EMPTY_OVERLAP_IDS = new Set<string>();
 const noop = () => {};
-const noopLayout = (_layout: Layout[]) => {};
-const noopSelectItem = (_itemId: string) => {};
-const noopContentChange = (_itemId: string, _newHtml: string) => {};
+const noopLayout = () => {};
+const noopSelectItem = () => {};
+const noopContentChange = () => {};
 
 export default function ResumeCanvas({
   resumeData,
@@ -107,6 +107,7 @@ export default function ResumeCanvas({
               ...(item.style ?? {}),
             };
 
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { borderColor: _dc, color: _dcolor, ...restDividerStyle } =
               (item.style ?? {}) as Record<string, unknown>;
             const dividerStyle = {

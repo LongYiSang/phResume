@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import { DEFAULT_LAYOUT_SETTINGS } from "@/utils/resume";
 import { extractBackgroundStyle } from "@/utils/color";
 import {
@@ -13,7 +13,7 @@ import {
   DEFAULT_DIVIDER_THICKNESS,
   DEFAULT_BACKGROUND_OPACITY,
 } from "@/utils/resumeItemUtils";
-import type { ResumeData, ResumeItem, ResumeItemStyle } from "@/types/resume";
+import type { ResumeData, ResumeItemStyle } from "@/types/resume";
 
 type UseItemStyleEditorParams = {
   selectedItemId: string | null;
@@ -26,14 +26,12 @@ export function useItemStyleEditor({
   resumeData,
   withHistory,
 }: UseItemStyleEditorParams) {
-  const selectedItem = useMemo<ResumeItem | null>(() => {
-    if (!resumeData || !selectedItemId) {
-      return null;
-    }
-    return resumeData.items.find((item) => item.id === selectedItemId) ?? null;
-  }, [resumeData, selectedItemId]);
+  const selectedItem =
+    resumeData && selectedItemId
+      ? resumeData.items.find((item) => item.id === selectedItemId) ?? null
+      : null;
 
-  const selectedItemFontSize = useMemo(() => {
+  const selectedItemFontSize = (() => {
     if (!selectedItem || !resumeData?.layout_settings) {
       return null;
     }
@@ -41,9 +39,9 @@ export function useItemStyleEditor({
       selectedItem.style?.fontSize,
       resumeData.layout_settings.font_size_pt,
     );
-  }, [selectedItem, resumeData?.layout_settings]);
+  })();
 
-  const selectedItemColor = useMemo(() => {
+  const selectedItemColor = (() => {
     if (!selectedItem || !resumeData?.layout_settings) {
       return null;
     }
@@ -58,9 +56,9 @@ export function useItemStyleEditor({
       return rawColor;
     }
     return resumeData.layout_settings.accent_color;
-  }, [selectedItem, resumeData?.layout_settings]);
+  })();
 
-  const selectedItemLineHeight = useMemo(() => {
+  const selectedItemLineHeight = (() => {
     if (!selectedItem || !resumeData?.layout_settings) {
       return null;
     }
@@ -75,9 +73,9 @@ export function useItemStyleEditor({
       }
     }
     return 1.2;
-  }, [selectedItem, resumeData?.layout_settings]);
+  })();
 
-  const selectedItemFontFamily = useMemo(() => {
+  const selectedItemFontFamily = (() => {
     if (
       !selectedItem ||
       (selectedItem.type !== "text" && selectedItem.type !== "section_title") ||
@@ -90,16 +88,14 @@ export function useItemStyleEditor({
       return rawFamily;
     }
     return resumeData.layout_settings.font_family;
-  }, [selectedItem, resumeData?.layout_settings]);
+  })();
 
-  const selectedDividerThickness = useMemo(() => {
-    if (!selectedItem || selectedItem.type !== "divider") {
-      return null;
-    }
-    return extractDividerThickness(selectedItem.style) ?? DEFAULT_DIVIDER_THICKNESS;
-  }, [selectedItem]);
+  const selectedDividerThickness =
+    selectedItem && selectedItem.type === "divider"
+      ? extractDividerThickness(selectedItem.style) ?? DEFAULT_DIVIDER_THICKNESS
+      : null;
 
-  const selectedImageScalePercent = useMemo(() => {
+  const selectedImageScalePercent = (() => {
     if (!selectedItem || selectedItem.type !== "image") {
       return null;
     }
@@ -108,9 +104,9 @@ export function useItemStyleEditor({
       return 100;
     }
     return Math.round(scale * 100);
-  }, [selectedItem]);
+  })();
 
-  const selectedImageFocus = useMemo(() => {
+  const selectedImageFocus = (() => {
     if (!selectedItem || selectedItem.type !== "image") {
       return null;
     }
@@ -121,17 +117,17 @@ export function useItemStyleEditor({
         y: 50,
       }
     );
-  }, [selectedItem]);
+  })();
 
-  const selectedItemBackgroundColor = useMemo(() => {
+  const selectedItemBackgroundColor = (() => {
     if (!selectedItem) {
       return null;
     }
     const { color } = extractBackgroundStyle(selectedItem.style);
     return color ?? null;
-  }, [selectedItem]);
+  })();
 
-  const selectedBorderRadius = useMemo(() => {
+  const selectedBorderRadius = (() => {
     if (!selectedItem || selectedItem.type !== "section_title") {
       return null;
     }
@@ -139,15 +135,15 @@ export function useItemStyleEditor({
     if (typeof radius === "number") return radius;
     if (typeof radius === "string") return parseFloat(radius) || 0;
     return 0;
-  }, [selectedItem]);
+  })();
 
-  const selectedItemBackgroundOpacity = useMemo(() => {
+  const selectedItemBackgroundOpacity = (() => {
     if (!selectedItem) {
       return null;
     }
     const { opacity } = extractBackgroundStyle(selectedItem.style);
     return typeof opacity === "number" ? opacity : null;
-  }, [selectedItem]);
+  })();
 
   const handleItemFontSizeChange = useCallback(
     (newSizePt: number) => {
