@@ -5,8 +5,8 @@
 ## 项目示例
 
 ### 纯前端Demo
-本项目有一个纯前端的功能示例：github.com/LongYiSang/PinResume
-体验地址：longyisang.icu
+- 本项目有一个纯前端的功能示例：github.com/LongYiSang/PinResume
+- 体验地址：longyisang.icu
 
 ## 快速上手
 
@@ -70,6 +70,7 @@ docker-compose up --build
 
 ## 详细文档 / API
 - 部署说明：`deploy/README-server.md`
+- 详细文档：详见`docs`
 
 ## 许可证
 Licensed under the MIT License. See `LICENSE`.
