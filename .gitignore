@@ -1,7 +1,6 @@
-# Node.js
+# Node.js / Next.js
 node_modules/
 .next/
-.trae
 out/
 build/
 dist/
@@ -10,19 +9,12 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-
-# TypeScript
 *.tsbuildinfo
 
 # Go build artifacts
-backend/tmp/
 backend/bin/
-
-# OS / Editor junk
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
+tmp/
+*.pid
 
 # Env files
 .env
@@ -30,23 +22,25 @@ Thumbs.db
 !.env.example
 !.env.prod.example
 
-# Docker
-*.pid
-tmp/
+# OS / Editor junk
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.trae
 
 # Build caches
 .turbo/
 .vercel/
 .cache/
-.gocache
+.gocache/
+.gomodcache/
+
+# Project-specific ignores
+/backend/api
 /backend/test.pdf
 /backend/internal/config/config_test.go
-/backend/api
-
-#doc
-/项目规划/Example/
-/.promptx
+/项目规划/
 /tests
-
-/backend/.gocache/
-/backend/.gomodcache/
+/.promptx
+/AGENTS.md
