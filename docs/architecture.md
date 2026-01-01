@@ -27,27 +27,27 @@ flowchart LR
   U[Browser] -->|HTTP| N[Nginx]
   U -->|WebSocket| N
 
-  N -->|/ ->| F[Frontend\nNext.js App Router]
-  N -->|/api/* ->| A[API\nGin HTTP]
+  N -->|"/"| F["Frontend<br/>Next.js App Router"]
+  N -->|"/api/*"| A["API<br/>Gin HTTP"]
 
   A -->|SQL| PG[(Postgres)]
   A -->|Asynq enqueue| R[(Redis)]
-  A -->|upload/list/get| S3[(MinIO/S3\nPrivate Bucket)]
+  A -->|upload/list/get| S3[(MinIO/S3<br/>Private Bucket)]
   A -->|scan stream| C[ClamAV]
   A -->|WS subscribe| R
 
-  W[Worker\nAsynq Server + Chromium(go-rod)] -->|dequeue| R
-  W -->|internal print data\nX-Internal-Secret| A
+  W["Worker<br/>Asynq Server + Chromium (go-rod)"] -->|dequeue| R
+  W -->|"internal print data<br/>X-Internal-Secret"| A
   W -->|render /print/*| F
   W -->|upload pdf/preview| S3
   W -->|update resume/template| PG
   W -->|publish notify| R
 
-  subgraph Observability[Observability (optional)]
+  subgraph Observability["Observability (optional)"]
     P[Prometheus] --> A
     P --> W
     G[Grafana] --> P
-    L[Loki] <-- PT[Promtail]
+    PT[Promtail] --> L[Loki]
   end
 ```
 
@@ -99,7 +99,7 @@ sequenceDiagram
   participant N as Nginx
   participant A as API
   participant C as ClamAV
-  participant S as MinIO/S3
+  participant S as "MinIO/S3"
   participant PG as Postgres
 
   U->>N: POST /api/v1/assets/upload (multipart file)
@@ -107,11 +107,11 @@ sequenceDiagram
   A->>C: ScanStream(file)
   C-->>A: OK / MALWARE
   alt MALWARE
-    A-->>U: 400 {"error":"malicious file detected"}
+    A-->>U: 400 error: malicious file detected
   else OK
-    A->>S: PutObject(user-assets/<uid>/<uuid>.<ext>)
-    A->>PG: INSERT assets(object_key,...)
-    A-->>U: 201 {"objectKey":"..."}
+    A->>S: PutObject user-assets/USER_ID/UUID.ext
+    A->>PG: INSERT assets(object_key, ...)
+    A-->>U: 201 objectKey
   end
 ```
 
@@ -127,33 +127,33 @@ sequenceDiagram
   participant U as Browser
   participant N as Nginx
   participant A as API
-  participant R as Redis/Asynq
-  participant W as Worker (Chromium)
-  participant F as Frontend (/print)
-  participant S as MinIO/S3
+  participant R as "Redis / Asynq"
+  participant W as "Worker (Chromium)"
+  participant F as "Frontend (/print)"
+  participant S as "MinIO/S3"
   participant PG as Postgres
-  participant WS as WebSocket (API)
+  participant WS as "WebSocket (API)"
 
   U->>N: GET /api/v1/resume/:id/download
   N->>A: proxy
-  A->>R: Enqueue pdf:generate {resume_id, correlation_id}
+  A->>R: Enqueue pdf:generate (resume_id, correlation_id)
   A-->>U: 202 accepted (correlation_id)
 
   W->>R: Dequeue pdf:generate
   W->>A: GET /v1/resume/print/:id (X-Internal-Secret)
-  A-->>W: PrintData (images inlined; warnings optional)
+  A-->>W: PrintData (images inlined, warnings optional)
   W->>F: Open /print/:id (go-rod)
   W->>F: Pre-inject window.__PRINT_DATA__
   F-->>W: #pdf-render-ready ready
   W->>W: PrintToPDF()
-  W->>S: Upload generated-resumes/<uid>/<uuid>.pdf
+  W->>S: Upload generated-resumes/USER_ID/UUID.pdf
   W->>PG: UPDATE resumes.pdf_url/status
-  W->>R: PUBLISH user_notify:<uid> (status=completed/error)
+  W->>R: PUBLISH user_notify:USER_ID (status=completed/error)
   WS-->>U: WebSocket message forwarded
 
   U->>N: GET /api/v1/resume/:id/download-link
   N->>A: proxy (Authorization)
-  A-->>U: {token, uid, expires_in}
+  A-->>U: token, uid, expires_in
   U->>N: GET /api/v1/resume/:id/download-file?uid&token
   N->>A: proxy
   A->>S: GetObject(pdf_url) + stream
