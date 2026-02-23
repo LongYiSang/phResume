@@ -27,7 +27,7 @@ tmp/
 Thumbs.db
 .idea/
 .vscode/
-.trae
+.trae/
 
 # Build caches
 .turbo/
@@ -42,5 +42,6 @@ Thumbs.db
 /backend/internal/config/config_test.go
 /项目规划/
 /tests
+/docker/
 /.promptx
 /AGENTS.md
